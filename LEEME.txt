@@ -1,0 +1,24 @@
+ACTUALIZACIÓN SAT CRON
+
+Contenido:
+- package.json
+- scripts/sat-cron.js
+
+Cómo instalar:
+1. Cierra el cron actual con Ctrl+C.
+2. Copia package.json a:
+   C:\Users\jvaug\Documents\REPORTE FINANCIERO\restaurante-app\package.json
+3. Copia sat-cron.js a:
+   C:\Users\jvaug\Documents\REPORTE FINANCIERO\restaurante-app\scripts\sat-cron.js
+4. No reemplaces la carpeta restaurante-app completa.
+5. Mantén tu .env.local actual; NO lo reemplaces.
+6. Con la aplicación corriendo en localhost:3000, abre otra ventana de PowerShell y ejecuta:
+
+   cd "C:\Users\jvaug\Documents\REPORTE FINANCIERO\restaurante-app"
+   npm run sat-cron
+
+Resultado esperado:
+Cron del SAT iniciado -- llamando a http://localhost:3000/api/sat/worker cada 5 minuto(s).
+
+El script npm run sat-cron carga .env.local automáticamente mediante:
+node --env-file=.env.local scripts/sat-cron.js
