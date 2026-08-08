@@ -1,0 +1,34 @@
+﻿PASOS - WORKER AUTOMATICO BARMAN
+
+1. En .env.local agregar SOLO EN LA PC LOCAL:
+   SUPABASE_DB_PASSWORD=TU_CONTRASENA_DE_BASE_DE_DATOS
+
+   NEXT_PUBLIC_SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY ya deben existir.
+
+2. Crear config.json si todavía no existe:
+   Copy-Item .\config.example.json .\config.json
+
+3. Probar manualmente:
+   .\Worker-Barman.ps1
+
+   Si no hay cargas debe indicar:
+   "No hay respaldos pendientes."
+
+4. Crear la tarea, desde PowerShell como administrador:
+   .\Registrar-TareaBarman.ps1
+
+5. Verificar:
+   Get-ScheduledTask -TaskName "BarMan - Procesar respaldos pendientes" |
+     Select-Object TaskName,State
+
+6. Ejecutar una prueba:
+   Start-ScheduledTask -TaskName "BarMan - Procesar respaldos pendientes"
+
+7. Ver último resultado:
+   Get-ScheduledTaskInfo -TaskName "BarMan - Procesar respaldos pendientes" |
+     Select-Object LastRunTime,LastTaskResult,NextRunTime
+
+LastTaskResult = 0 significa ejecución correcta.
+
+Logs:
+Documents\REPORTE FINANCIERO\barman_worker\logs

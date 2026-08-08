@@ -1,0 +1,20 @@
+ACTUALIZACION PROGRESO BARMAN V2
+
+Reemplaza estos archivos dentro de restaurante-app:
+- app/reportes/actualizar-barman/page.js
+- app/globals.css
+- scripts/barMan-etl/Worker-Barman.ps1
+
+Mejoras:
+1. Porcentaje real de subida del .bm2.
+2. Barra general del proceso.
+3. Etapas visibles: Subir > En cola > Descargar > Restaurar > Extraer > Validar > Actualizar > Listo.
+4. Progreso visible también en el historial.
+5. Auto-refresh cada 5 segundos.
+6. Worker informa cambios de etapa a Supabase.
+7. Incluye corrección para cola vacía sin error de propiedad id.
+
+Después de reemplazar:
+- Para probar localmente el worker: Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+- Ejecutar: .\scripts\barMan-etl\Worker-Barman.ps1
+- Para publicar la página: git add . ; git commit -m "Agregar progreso a carga BarMan" ; git push
