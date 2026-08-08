@@ -1,0 +1,11 @@
+{
+  "SqlServer": ".\\SQLEXPRESS",
+  "SqlDatabase": "BARMAN_ETL",
+  "ReviewDays": 15,
+  "SupabaseHost": "aws-1-us-west-2.pooler.supabase.com",
+  "SupabasePort": 5432,
+  "SupabaseUser": "postgres.euhprxipydbgjcpfwaqf",
+  "SupabaseDatabase": "postgres",
+  "PsqlPath": "C:\\Program Files\\PostgreSQL\\18\\bin\\psql.exe",
+  "WorkRoot": "C:\\Users\\jvaug\\Documents\\REPORTE FINANCIERO\\barman_etl"
+}

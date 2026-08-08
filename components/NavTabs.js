@@ -10,6 +10,7 @@ import { supabase } from '../lib/supabaseClient';
 const ENLACES = [
   { href: '/reportes/panel-comercial', etiqueta: 'Panel Comercial' },
   { href: '/reportes/grafica', etiqueta: 'Gráfica' },
+  { href: '/reportes/actualizar-barman', etiqueta: 'Actualizar BarMan' },
 ];
 
 export default function NavTabs({ usuario }) {
