@@ -22,7 +22,10 @@ function tipoDeAcumulado(pct) {
 export default function Pareto() {
   const [fechaInicio, setFechaInicio] = useState('');
   const [fechaFin, setFechaFin] = useState('');
-  const [filtroCategoria, setFiltroCategoria] = useState('todos'); // todos | alimento | bebida
+  const [filtroCategoria, setFiltroCategoria] = useState('todos'); // todos | todos_cortesias | alimento | bebida
+  const [filtroTipoVenta, setFiltroTipoVenta] = useState([]); // subconjunto de ['A','B','C'] -- vacío = sin filtro
+  const [filtroTipoRotacion, setFiltroTipoRotacion] = useState([]); // subconjunto de ['A','B','C'] -- vacío = sin filtro
+  const [filtroTipoVR, setFiltroTipoVR] = useState(''); // '' = sin filtro, o una de las 9 combinaciones
   const [ventas, setVentas] = useState([]);
   const [productos, setProductos] = useState([]);
   const [cargando, setCargando] = useState(true);
@@ -62,7 +65,13 @@ export default function Pareto() {
       const fecha = fechaPorVenta[p.venta_id];
       if (!fecha) return false;
       if (fecha < desde || fecha > hasta) return false;
-      if (filtroCategoria !== 'todos' && p.categoria !== filtroCategoria) return false;
+
+      const esCortesia = Number(p.importe_lista || 0) <= 0;
+
+      if (filtroCategoria === 'alimento') return p.categoria === 'alimento' && !esCortesia;
+      if (filtroCategoria === 'bebida') return p.categoria === 'bebida' && !esCortesia;
+      if (filtroCategoria === 'todos') return !esCortesia; // Alimentos + Bebidas, SIN cortesías
+      // 'todos_cortesias' -> Alimentos + Bebidas + Cortesías, no se excluye nada más
       return true;
     });
 
@@ -145,6 +154,19 @@ export default function Pareto() {
     return celdas;
   }, [filas]);
 
+  const filasVisibles = useMemo(() => {
+    return filas.detalle.filter((r) => {
+      if (filtroTipoVenta.length > 0 && !filtroTipoVenta.includes(r.tipoVenta)) return false;
+      if (filtroTipoRotacion.length > 0 && !filtroTipoRotacion.includes(r.tipoRotacion)) return false;
+      if (filtroTipoVR && r.tipoVR !== filtroTipoVR) return false;
+      return true;
+    });
+  }, [filas, filtroTipoVenta, filtroTipoRotacion, filtroTipoVR]);
+
+  function alternarTipo(lista, setLista, letra) {
+    setLista(lista.includes(letra) ? lista.filter((x) => x !== letra) : [...lista, letra]);
+  }
+
   const etiquetaCategoria = { alimento: 'Alimentos', bebida: 'Bebidas', cortesia: 'Cortesía' };
 
   return (
@@ -155,7 +177,7 @@ export default function Pareto() {
           Análisis ABC de ventas y rotación por producto — real, calculado en vivo desde BarMan.
         </p>
 
-        <div className="filtro-fecha" style={{ marginBottom: 20 }}>
+        <div className="filtro-fecha" style={{ marginBottom: 12 }}>
           <div>
             <label>Fecha inicio</label>
             <input type="date" value={fechaInicio} onChange={(e) => setFechaInicio(e.target.value)} />
@@ -167,10 +189,55 @@ export default function Pareto() {
           <div>
             <label>Categoría</label>
             <select value={filtroCategoria} onChange={(e) => setFiltroCategoria(e.target.value)}>
-              <option value="todos">Todos (alimentos + bebidas)</option>
+              <option value="todos">Alimentos + Bebidas</option>
+              <option value="todos_cortesias">Alimentos + Bebidas + Cortesías</option>
               <option value="alimento">Solo alimentos</option>
               <option value="bebida">Solo bebidas</option>
             </select>
+          </div>
+          <div>
+            <label>Tipo V-R (combinación exacta)</label>
+            <select value={filtroTipoVR} onChange={(e) => setFiltroTipoVR(e.target.value)}>
+              <option value="">Todas las combinaciones</option>
+              {['A', 'B', 'C'].flatMap((a) => ['A', 'B', 'C'].map((b) => (
+                <option key={`${a}${b}`} value={`${a}${b}`}>{a}{b}</option>
+              )))}
+            </select>
+          </div>
+        </div>
+
+        <div className="filtro-fecha" style={{ marginBottom: 20, alignItems: 'flex-start' }}>
+          <div>
+            <label>Tipo venta</label>
+            <div style={{ display: 'flex', gap: 12, paddingTop: 8 }}>
+              {['A', 'B', 'C'].map((letra) => (
+                <label key={letra} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.85rem' }}>
+                  <input
+                    type="checkbox"
+                    checked={filtroTipoVenta.includes(letra)}
+                    onChange={() => alternarTipo(filtroTipoVenta, setFiltroTipoVenta, letra)}
+                    style={{ width: 'auto' }}
+                  />
+                  <span style={claseTipo(letra)}>{letra}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label>Tipo rotación</label>
+            <div style={{ display: 'flex', gap: 12, paddingTop: 8 }}>
+              {['A', 'B', 'C'].map((letra) => (
+                <label key={letra} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.85rem' }}>
+                  <input
+                    type="checkbox"
+                    checked={filtroTipoRotacion.includes(letra)}
+                    onChange={() => alternarTipo(filtroTipoRotacion, setFiltroTipoRotacion, letra)}
+                    style={{ width: 'auto' }}
+                  />
+                  <span style={claseTipo(letra)}>{letra}</span>
+                </label>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -225,7 +292,7 @@ export default function Pareto() {
               Detalle por producto
             </h2>
             <p className="subtitulo" style={{ marginBottom: 10 }}>
-              {filas.detalle.length} artículo(s) · Venta total {formatoMoneda(filas.totalVenta)} · {filas.totalCuentas} cuentas
+              {filasVisibles.length} de {filas.detalle.length} artículo(s) · Venta total {formatoMoneda(filas.totalVenta)} · {filas.totalCuentas} cuentas
             </p>
             <div style={{ overflowX: 'auto' }}>
               <table className="reporte" style={{ fontSize: '0.78rem', minWidth: 1400 }}>
@@ -248,7 +315,7 @@ export default function Pareto() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filas.detalle.map((r) => (
+                  {filasVisibles.map((r) => (
                     <tr key={`${r.nombre}__${r.categoria}`}>
                       <td className="nombre">{etiquetaCategoria[r.categoria]}</td>
                       <td className="nombre">{r.nombre}</td>
