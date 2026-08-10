@@ -4,11 +4,10 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 const ENLACES = [
-  { href: '/', etiqueta: 'Inicio' },
-  { href: '/herramientas', etiqueta: 'Herramientas' },
-  { href: '/reportes/estado-resultados', etiqueta: 'Estado de Resultados' },
-  { href: '/reportes/balance-general', etiqueta: 'Balance General' },
-  { href: '/reportes/flujo-caja', etiqueta: 'Flujo de Caja' },
+  // Fase 1: solo lo que corresponde a información de ventas ya disponible.
+  // El resto de páginas (Inicio, Herramientas, Estado de Resultados,
+  // Balance General, Flujo de Caja) siguen existiendo y funcionando --
+  // solo se ocultaron del menú mientras se incorporan costos (fase 2).
   { href: '/reportes/grafica', etiqueta: 'Gráfica' },
   { href: '/reportes/panel-comercial', etiqueta: 'Panel Comercial' },
   { href: '/reportes/pareto', etiqueta: 'Pareto' },
