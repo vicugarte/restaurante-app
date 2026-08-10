@@ -1,32 +1,48 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import { supabase } from '../lib/supabaseClient';
 
+// Primera entrega comercial:
+// Los demás módulos siguen existiendo en el proyecto, pero se mantienen
+// fuera de la navegación hasta la siguiente etapa.
 const ENLACES = [
-  // Fase 1: solo lo que corresponde a información de ventas ya disponible.
-  // El resto de páginas (Inicio, Herramientas, Estado de Resultados,
-  // Balance General, Flujo de Caja) siguen existiendo y funcionando --
-  // solo se ocultaron del menú mientras se incorporan costos (fase 2).
-  { href: '/reportes/grafica', etiqueta: 'Gráfica' },
   { href: '/reportes/panel-comercial', etiqueta: 'Panel Comercial' },
+  { href: '/reportes/grafica', etiqueta: 'Gráfica' },
   { href: '/reportes/pareto', etiqueta: 'Pareto' },
+  { href: '/reportes/actualizar-barman', etiqueta: 'Actualizar BarMan' },
 ];
 
-export default function NavTabs() {
+export default function NavTabs({ usuario }) {
   const pathname = usePathname();
+  const router = useRouter();
+
+  async function cerrarSesion() {
+    await supabase.auth.signOut();
+    router.replace('/login');
+    router.refresh();
+  }
 
   return (
-    <nav className="tabs">
-      {ENLACES.map((enlace) => (
-        <Link
-          key={enlace.href}
-          href={enlace.href}
-          className={pathname === enlace.href ? 'activo' : ''}
-        >
-          {enlace.etiqueta}
-        </Link>
-      ))}
-    </nav>
+    <div className="nav-con-sesion">
+      <nav className="tabs">
+        {ENLACES.map((enlace) => (
+          <Link
+            key={enlace.href}
+            href={enlace.href}
+            className={pathname === enlace.href ? 'activo' : ''}
+          >
+            {enlace.etiqueta}
+          </Link>
+        ))}
+      </nav>
+      <div className="sesion-usuario">
+        <span title={usuario?.email || ''}>{usuario?.email || 'Usuario'}</span>
+        <button type="button" className="boton-sesion" onClick={cerrarSesion}>
+          Cerrar sesión
+        </button>
+      </div>
+    </div>
   );
 }

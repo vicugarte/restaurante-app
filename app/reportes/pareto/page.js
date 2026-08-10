@@ -98,7 +98,6 @@ export default function Pareto() {
 
     const totalVenta = lista.reduce((s, r) => s + r.venta, 0);
 
-    // --- Ranking y pareto por VENTA ---
     lista.sort((a, b) => b.venta - a.venta);
     let acumuladoVenta = 0;
     lista.forEach((r, i) => {
@@ -109,7 +108,6 @@ export default function Pareto() {
       r.tipoVenta = tipoDeAcumulado(acumuladoVenta);
     });
 
-    // --- Ranking y pareto por ROTACIÓN ---
     const porRotacion = [...lista].sort((a, b) => b.rotacion - a.rotacion);
     let acumuladoRotacion = 0;
     porRotacion.forEach((r, i) => {
@@ -180,7 +178,6 @@ export default function Pareto() {
           <p className="estado-vacio">Cargando…</p>
         ) : (
           <>
-            {/* ---------- VENTA CONSUMO ---------- */}
             <h2 style={{ fontFamily: 'var(--fuente-titulo)', fontSize: '1.3rem', color: NAVY, marginBottom: 4 }}>
               Venta Consumo
             </h2>
@@ -224,7 +221,6 @@ export default function Pareto() {
               )}
             </div>
 
-            {/* ---------- TABLA DETALLE ---------- */}
             <h2 style={{ fontFamily: 'var(--fuente-titulo)', fontSize: '1.3rem', color: NAVY, marginBottom: 4 }}>
               Detalle por producto
             </h2>
