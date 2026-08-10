@@ -1,0 +1,10 @@
+﻿CORRECCIÓN ETL BARMAN V8
+
+Causa del error:
+Invoke-DataTable devolvía un System.Data.DataTable, pero PowerShell lo enumeraba como filas (DataRow). Al asignarlo, el resultado terminaba siendo System.Object[] y Export-TableCsv exige System.Data.DataTable.
+
+Corrección:
+- return $dt -> return (, $dt)
+- Se conserva el DataTable como un único objeto.
+- También se renombraron variables locales $args a $psqlArgs para evitar conflictos con la variable automática de PowerShell.
+- Conserva todas las correcciones V7: DeflateStream, permisos SQL Server, FILELISTONLY y conexión Supabase.

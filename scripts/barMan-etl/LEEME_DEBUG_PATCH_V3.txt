@@ -1,0 +1,8 @@
+﻿CORRECCION / DIAGNOSTICO WORKER V3
+
+- Fuerza JSON PATCH a UTF-8 sin BOM para Windows PowerShell 5.1.
+- Muestra ID de la carga encontrada.
+- Si Supabase devuelve 400, muestra el cuerpo JSON real del error.
+- Conserva la corrección de descarga del bucket privado.
+
+Reemplazar Worker-Barman.ps1 y ejecutar de nuevo.

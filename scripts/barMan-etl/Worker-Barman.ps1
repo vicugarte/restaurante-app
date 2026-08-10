@@ -57,11 +57,55 @@ function Escape-StoragePath([string]$Path) {
     return (($Path -split "/") | ForEach-Object { [Uri]::EscapeDataString($_) }) -join "/"
 }
 
+function Get-HttpErrorDetail($ErrorRecord) {
+    $detalle = $ErrorRecord.Exception.Message
+
+    try {
+        if ($ErrorRecord.ErrorDetails -and $ErrorRecord.ErrorDetails.Message) {
+            return "$detalle | $($ErrorRecord.ErrorDetails.Message)"
+        }
+    } catch {}
+
+    try {
+        $response = $ErrorRecord.Exception.Response
+        if ($response) {
+            $stream = $response.GetResponseStream()
+            if ($stream) {
+                $reader = New-Object System.IO.StreamReader($stream)
+                $body = $reader.ReadToEnd()
+                $reader.Dispose()
+                if (-not [string]::IsNullOrWhiteSpace($body)) {
+                    return "$detalle | RESPUESTA SUPABASE: $body"
+                }
+            }
+        }
+    } catch {}
+
+    return $detalle
+}
+
 function Update-Importacion([string]$Id, [hashtable]$Values) {
     $Values["actualizado_en"] = (Get-Date).ToUniversalTime().ToString("o")
     $json = $Values | ConvertTo-Json -Compress
-    $uri = "$($script:SupabaseUrl)/rest/v1/barman_importaciones?id=eq.$Id"
-    Invoke-RestMethod -Method Patch -Uri $uri -Headers (Get-Headers) -Body $json | Out-Null
+    $uri = "$($script:SupabaseUrl)/rest/v1/barman_importaciones?id=eq.$([Uri]::EscapeDataString($Id))"
+
+    # Windows PowerShell 5.1 puede codificar de forma ambigua un string
+    # enviado como application/json. Forzamos UTF-8 sin BOM.
+    $utf8 = New-Object System.Text.UTF8Encoding($false)
+    $bodyBytes = $utf8.GetBytes($json)
+
+    try {
+        Invoke-RestMethod `
+            -Method Patch `
+            -Uri $uri `
+            -Headers (Get-Headers) `
+            -ContentType "application/json; charset=utf-8" `
+            -Body $bodyBytes | Out-Null
+    }
+    catch {
+        $detalle = Get-HttpErrorDetail $_
+        throw "Supabase rechazó la actualización de la importación ID=$Id. JSON=$json. $detalle"
+    }
 }
 
 Import-DotEnv $EnvFile
@@ -100,6 +144,9 @@ try {
         throw "El registro pendiente no corresponde a un archivo .bm2: $archivo"
     }
 
+    Write-Log "Carga encontrada. ID=$id Archivo=$archivo"
+    Write-Log "Actualizando estado: pendiente -> descargando"
+
     Update-Importacion $id @{
         estado = "descargando"
         mensaje = "Windows detectó la carga. Descargando respaldo para procesarlo."
@@ -111,12 +158,21 @@ try {
     $localFile = Join-Path $localDir $safeName
 
     $encodedPath = Escape-StoragePath $storagePath
-    $downloadUri = "$($script:SupabaseUrl)/storage/v1/object/barman-respaldos/$encodedPath"
+    $downloadUri = "$($script:SupabaseUrl)/storage/v1/object/authenticated/barman-respaldos/$encodedPath"
     Write-Log "Descargando $archivo."
-    Invoke-WebRequest -Method Get -Uri $downloadUri -Headers @{
-        "apikey" = $script:ServiceKey
-        "Authorization" = "Bearer $($script:ServiceKey)"
-    } -OutFile $localFile
+    try {
+        Invoke-WebRequest -Method Get -Uri $downloadUri -Headers @{
+            "apikey" = $script:ServiceKey
+            "Authorization" = "Bearer $($script:ServiceKey)"
+        } -OutFile $localFile
+    }
+    catch {
+        $detalle = $_.Exception.Message
+        if ($_.ErrorDetails -and $_.ErrorDetails.Message) {
+            $detalle = "$detalle | $($_.ErrorDetails.Message)"
+        }
+        throw "No se pudo descargar el respaldo desde Supabase Storage: $detalle"
+    }
 
     $hash = (Get-FileHash -Path $localFile -Algorithm SHA256).Hash.ToLowerInvariant()
 
@@ -129,11 +185,19 @@ try {
     Write-Log "Ejecutando ETL incremental para $archivo."
     $etlLog = Join-Path $Logs "etl_${id}_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
     $ultimoEstado = "restaurando"
+    $avisoPendientesCategoria = $null
 
     & $Processor -BackupPath $localFile -ConfigPath $ConfigPath 2>&1 | ForEach-Object {
         $line = [string]$_
         Add-Content -Path $etlLog -Value $line -Encoding UTF8
         Write-Host $line
+
+        if ($line -match '^PRODUCTOS_PENDIENTES_CATEGORIA:\s*(\d+)\|(.+)$') {
+            $cantidad = $Matches[1]
+            $nombres = $Matches[2]
+            $avisoPendientesCategoria = "⚠ $cantidad producto(s) nuevo(s) sin categoría, se importaron como 'Sin clasificar': $nombres. Corrígelos en Supabase."
+            Write-Log "Aviso: $avisoPendientesCategoria"
+        }
 
         $nuevoEstado = $null
         $nuevoMensaje = $null
@@ -172,9 +236,14 @@ try {
         $pagos = [int]$etlRows[0].pagos_extraidos
     }
 
+    $mensajeFinal = "Respaldo procesado correctamente. Los reportes ya usan la información actualizada."
+    if ($avisoPendientesCategoria) {
+        $mensajeFinal = "$mensajeFinal $avisoPendientesCategoria"
+    }
+
     Update-Importacion $id @{
         estado = "completado"
-        mensaje = "Respaldo procesado correctamente. Los reportes ya usan la información actualizada."
+        mensaje = $mensajeFinal
         fin_proceso = (Get-Date).ToUniversalTime().ToString("o")
         ventas_procesadas = $ventas
         productos_procesados = $productos

@@ -1,0 +1,21 @@
+﻿CORRECCIÓN ETL BARMAN V10
+
+Causa:
+SQL Server devolvía OperationDate como DateTime y PowerShell/Export-Csv lo
+serializaba usando la configuración regional de Windows, por ejemplo:
+03/08/2026 06:58:37 p. m.
+
+PostgreSQL interpretaba 'a.' o 'p.' como zona horaria:
+ERROR: time zone "a." not recognized
+
+Corrección:
+Las consultas de ventas y cortesías convierten OperationDate directamente
+en SQL Server usando:
+CONVERT(varchar(19), OperationDate, 120)
+
+Formato resultante:
+yyyy-MM-dd HH:mm:ss
+
+Esto elimina la dependencia de la configuración regional de Windows.
+
+Conserva todas las correcciones V4-V9.

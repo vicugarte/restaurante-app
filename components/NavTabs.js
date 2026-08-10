@@ -1,47 +1,33 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
-import { supabase } from '../lib/supabaseClient';
+import { usePathname } from 'next/navigation';
 
-// Primera entrega comercial:
-// Los demás módulos siguen existiendo en el proyecto, pero se mantienen
-// fuera de la navegación hasta la siguiente etapa.
 const ENLACES = [
-  { href: '/reportes/panel-comercial', etiqueta: 'Panel Comercial' },
+  { href: '/', etiqueta: 'Inicio' },
+  { href: '/herramientas', etiqueta: 'Herramientas' },
+  { href: '/reportes/estado-resultados', etiqueta: 'Estado de Resultados' },
+  { href: '/reportes/balance-general', etiqueta: 'Balance General' },
+  { href: '/reportes/flujo-caja', etiqueta: 'Flujo de Caja' },
   { href: '/reportes/grafica', etiqueta: 'Gráfica' },
-  { href: '/reportes/actualizar-barman', etiqueta: 'Actualizar BarMan' },
+  { href: '/reportes/panel-comercial', etiqueta: 'Panel Comercial' },
+  { href: '/reportes/pareto', etiqueta: 'Pareto' },
 ];
 
-export default function NavTabs({ usuario }) {
+export default function NavTabs() {
   const pathname = usePathname();
-  const router = useRouter();
-
-  async function cerrarSesion() {
-    await supabase.auth.signOut();
-    router.replace('/login');
-    router.refresh();
-  }
 
   return (
-    <div className="nav-con-sesion">
-      <nav className="tabs">
-        {ENLACES.map((enlace) => (
-          <Link
-            key={enlace.href}
-            href={enlace.href}
-            className={pathname === enlace.href ? 'activo' : ''}
-          >
-            {enlace.etiqueta}
-          </Link>
-        ))}
-      </nav>
-      <div className="sesion-usuario">
-        <span title={usuario?.email || ''}>{usuario?.email || 'Usuario'}</span>
-        <button type="button" className="boton-sesion" onClick={cerrarSesion}>
-          Cerrar sesión
-        </button>
-      </div>
-    </div>
+    <nav className="tabs">
+      {ENLACES.map((enlace) => (
+        <Link
+          key={enlace.href}
+          href={enlace.href}
+          className={pathname === enlace.href ? 'activo' : ''}
+        >
+          {enlace.etiqueta}
+        </Link>
+      ))}
+    </nav>
   );
 }

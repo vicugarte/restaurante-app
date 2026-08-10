@@ -1,0 +1,16 @@
+﻿CORRECCIÓN ETL BARMAN V7
+
+Confirmado en el respaldo real BMDb_03-08-2026_18.58.24.bm2:
+
+1. El .bm2 se descomprime con System.IO.Compression.DeflateStream.
+2. El resultado es un .bak SQL Server válido.
+3. Se otorga automáticamente permiso de lectura a:
+   NT SERVICE\MSSQL$SQLEXPRESS
+4. Después continúa RESTORE FILELISTONLY y RESTORE DATABASE.
+5. Conserva las correcciones anteriores de:
+   - PsqlArgs
+   - parsing FILELISTONLY
+   - flujo incremental
+
+Reemplazar únicamente:
+scripts\barMan-etl\Procesar-BarmanIncremental.ps1

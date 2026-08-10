@@ -1,0 +1,16 @@
+﻿CORRECCIÓN ETL BARMAN V9
+
+Causa del error:
+psql \copy declaraba únicamente las columnas comunes con Supabase, pero
+intentaba importar el CSV original con más columnas. PostgreSQL devolvía:
+'extra data after last expected column'.
+
+Corrección:
+- Genera copy_barman_*.csv con exactamente las columnas compatibles.
+- Mantiene orden idéntico entre CSV y lista de columnas de COPY.
+- Conserva quoting CSV correcto para comas, comillas y texto.
+- Sustituye el último uso de la variable reservada $args por $importArgs.
+- Conserva todas las correcciones V4-V8.
+
+Reemplazar solamente:
+scripts\barMan-etl\Procesar-BarmanIncremental.ps1

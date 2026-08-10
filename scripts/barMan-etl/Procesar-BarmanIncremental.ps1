@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [Parameter(Mandatory=$true, Position=0)]
     [string]$BackupPath,
@@ -54,7 +54,10 @@ function Invoke-DataTable([string]$Server,[string]$Database,[string]$Query,[date
     $dt = New-Object System.Data.DataTable
     try {
         [void]$da.Fill($dt)
-        return $dt
+        # DataTable implementa IEnumerable. PowerShell puede desdoblarlo en sus
+        # DataRow y convertir el resultado de la función en System.Object[].
+        # La coma unaria obliga a devolver el DataTable como un único objeto.
+        return (, $dt)
     } finally {
         $da.Dispose(); $cmd.Dispose(); $cn.Dispose()
     }
@@ -76,20 +79,20 @@ function Export-TableCsv([System.Data.DataTable]$Table,[string]$Path) {
         [IO.File]::WriteAllText($Path, $header + [Environment]::NewLine, (New-Object Text.UTF8Encoding($true)))
     }
 }
-function Invoke-Psql([string[]]$Args) {
-    $out = & $script:Psql @Args 2>&1
+function Invoke-Psql([string[]]$PsqlArgs) {
+    $out = & $script:Psql @PsqlArgs 2>&1
     if ($LASTEXITCODE -ne 0) { throw ($out -join "`n") }
     return $out
 }
 function Psql-Scalar([string]$Sql) {
-    $args = @('-h',$Cfg.SupabaseHost,'-p',[string]$Cfg.SupabasePort,'-U',$Cfg.SupabaseUser,'-d',$Cfg.SupabaseDatabase,'-t','-A','-v','ON_ERROR_STOP=1','-c',$Sql)
-    $out = Invoke-Psql $args
+    $psqlArgs = @('-h',$Cfg.SupabaseHost,'-p',[string]$Cfg.SupabasePort,'-U',$Cfg.SupabaseUser,'-d',$Cfg.SupabaseDatabase,'-t','-A','-v','ON_ERROR_STOP=1','-c',$Sql)
+    $out = Invoke-Psql $psqlArgs
     return (($out | Where-Object { $_ -and $_.Trim() } | Select-Object -First 1).Trim())
 }
 function Get-TargetColumns([string]$Table) {
     $sql = "select column_name from information_schema.columns where table_schema='public' and table_name='$Table' order by ordinal_position;"
-    $args = @('-h',$Cfg.SupabaseHost,'-p',[string]$Cfg.SupabasePort,'-U',$Cfg.SupabaseUser,'-d',$Cfg.SupabaseDatabase,'-t','-A','-v','ON_ERROR_STOP=1','-c',$sql)
-    return @(Invoke-Psql $args | Where-Object { $_ -and $_.Trim() } | ForEach-Object { $_.Trim() })
+    $psqlArgs = @('-h',$Cfg.SupabaseHost,'-p',[string]$Cfg.SupabasePort,'-U',$Cfg.SupabaseUser,'-d',$Cfg.SupabaseDatabase,'-t','-A','-v','ON_ERROR_STOP=1','-c',$sql)
+    return @(Invoke-Psql $psqlArgs | Where-Object { $_ -and $_.Trim() } | ForEach-Object { $_.Trim() })
 }
 function Get-CsvHeaders([string]$Path) {
     $first = Get-Content -Path $Path -TotalCount 1
@@ -103,6 +106,30 @@ function Common-Columns([string]$Csv,[string]$Target) {
     $headers = Get-CsvHeaders $Csv
     $targetCols = Get-TargetColumns $Target
     return @($headers | Where-Object { $targetCols -contains $_ })
+}
+
+function Export-CsvSubset([string]$SourceCsv,[string]$DestinationCsv,[string[]]$Columns) {
+    if (-not $Columns -or $Columns.Count -eq 0) {
+        throw "No hay columnas para proyectar desde $SourceCsv."
+    }
+
+    $rows = @(Import-Csv -Path $SourceCsv)
+    if ($rows.Count -gt 0) {
+        $rows |
+            Select-Object -Property $Columns |
+            Export-Csv -Path $DestinationCsv -NoTypeInformation -Encoding UTF8
+    }
+    else {
+        # Mantener un CSV válido aun cuando no existan filas.
+        $header = ($Columns | ForEach-Object {
+            '"' + ([string]$_).Replace('"','""') + '"'
+        }) -join ','
+        [IO.File]::WriteAllText(
+            $DestinationCsv,
+            $header + [Environment]::NewLine,
+            (New-Object Text.UTF8Encoding($true))
+        )
+    }
 }
 function Csv-SqlPath([string]$Path) {
     return $Path.Replace('\','/').Replace("'","''")
@@ -141,38 +168,130 @@ Write-Ok "Respaldo nuevo: $backupName"
 Write-Step "Preparando .bm2/.bak"
 $bakPath = Join-Path $runDir 'BarMan_entrada.bak'
 $sig = Get-First4 $BackupPath
-if ($sig -eq 'TAPE') {
-    Copy-Item $BackupPath $bakPath -Force
-} elseif ($sig.Substring(0,2) -eq 'PK') {
+
+if ($sig.Substring(0,2) -eq 'PK') {
     $unzip = Join-Path $runDir 'descomprimido'
     Expand-Archive -Path $BackupPath -DestinationPath $unzip -Force
-    $candidate = Get-ChildItem $unzip -Recurse -File | Where-Object {
-        $_.Extension -ieq '.bak' -or (Get-First4 $_.FullName) -eq 'TAPE'
-    } | Sort-Object Length -Descending | Select-Object -First 1
-    if (-not $candidate) { throw 'El .bm2 es ZIP, pero no contiene un respaldo SQL Server reconocible.' }
-    Copy-Item $candidate.FullName $bakPath -Force
-} else {
-    throw "Formato .bm2 no reconocido. Firma inicial: '$sig'."
-}
-Write-Ok "Respaldo SQL preparado"
 
-# SQL Server necesita permiso de lectura sobre el archivo.
-try { & icacls $bakPath /grant 'NT SERVICE\MSSQL$SQLEXPRESS:(R)' | Out-Null } catch {}
+    $candidate = Get-ChildItem $unzip -Recurse -File |
+        Sort-Object @{Expression={ if ($_.Extension -ieq '.bak') { 0 } else { 1 } }}, @{Expression='Length';Descending=$true} |
+        Select-Object -First 1
+
+    if (-not $candidate) {
+        throw 'El .bm2 es ZIP, pero no contiene archivos para validar como respaldo SQL Server.'
+    }
+
+    Copy-Item $candidate.FullName $bakPath -Force
+    Write-Ok "Contenedor ZIP extraído: $($candidate.Name)"
+}
+elseif ([System.IO.Path]::GetExtension($BackupPath) -ieq '.bm2') {
+    # Los respaldos .bm2 de BarMan están comprimidos mediante DeflateStream.
+    # Se descomprimen directamente a un .bak que SQL Server puede restaurar.
+    Write-Host "    Descomprimiendo respaldo BarMan con DeflateStream..." -ForegroundColor Gray
+
+    $entrada = [System.IO.File]::OpenRead($BackupPath)
+    try {
+        $deflate = New-Object System.IO.Compression.DeflateStream(
+            $entrada,
+            [System.IO.Compression.CompressionMode]::Decompress
+        )
+        try {
+            $destino = [System.IO.File]::Create($bakPath)
+            try {
+                $deflate.CopyTo($destino)
+            }
+            finally {
+                $destino.Dispose()
+            }
+        }
+        finally {
+            $deflate.Dispose()
+        }
+    }
+    finally {
+        $entrada.Dispose()
+    }
+
+    if (-not (Test-Path $bakPath)) {
+        throw 'No se generó el archivo .bak después de descomprimir el .bm2.'
+    }
+
+    $bakLength = (Get-Item $bakPath).Length
+    if ($bakLength -le 0) {
+        throw 'El .bak descomprimido tiene tamaño cero.'
+    }
+
+    Write-Ok ("DeflateStream completado. Tamaño .bak: {0:N0} bytes" -f $bakLength)
+}
+else {
+    Copy-Item $BackupPath $bakPath -Force
+    Write-Ok "Archivo copiado para validación por SQL Server (firma inicial informativa: '$sig')"
+}
+
+# SQL Server Express se ejecuta con su propia cuenta de servicio.
+# Otorgamos lectura al archivo generado para evitar Operating system error 5.
+$sqlServiceAccount = 'NT SERVICE\MSSQL$SQLEXPRESS'
+$icaclsOut = & icacls $bakPath /grant "$sqlServiceAccount`:(R)" 2>&1
+if ($LASTEXITCODE -ne 0) {
+    throw "No pude otorgar permiso de lectura al servicio SQL Server sobre '$bakPath'.`n$($icaclsOut -join "`n")"
+}
+Write-Ok "Permiso de lectura otorgado a MSSQL`$SQLEXPRESS"
+
+Write-Ok "Respaldo SQL preparado"
 
 Write-Step "Leyendo nombres lógicos del respaldo"
 $fileList = & sqlcmd -S $Cfg.SqlServer -E -W -s '|' -h -1 -Q "RESTORE FILELISTONLY FROM DISK=N'$($bakPath.Replace("'","''"))';" 2>&1
-if ($LASTEXITCODE -ne 0) { throw ($fileList -join "`n") }
-$parsed = @()
-foreach ($line in $fileList) {
-    if (-not $line -or $line -notmatch '\|') { continue }
-    $p = $line.Split('|') | ForEach-Object { $_.Trim() }
-    if ($p.Count -ge 3 -and ($p[2] -eq 'D' -or $p[2] -eq 'L')) {
-        $parsed += [pscustomobject]@{ Logical=$p[0]; Type=$p[2] }
+if ($LASTEXITCODE -ne 0) {
+    throw "SQL Server no reconoció el .bm2 copiado como respaldo restaurable.`n$($fileList -join "`n")"
+}
+$dataLogical = $null
+$logLogical = $null
+
+# RESTORE FILELISTONLY devuelve una fila por archivo. sqlcmd puede variar
+# ligeramente el espaciado/formato según versión e idioma, así que evitamos
+# depender de objetos intermedios y analizamos cada línea directamente.
+foreach ($lineObj in $fileList) {
+    $line = [string]$lineObj
+    if ([string]::IsNullOrWhiteSpace($line) -or $line -notmatch '\|') { continue }
+
+    $parts = @($line.Split('|') | ForEach-Object { ([string]$_).Trim() })
+    if ($parts.Count -lt 3) { continue }
+
+    $logical = $parts[0]
+    $type = $parts[2].Trim().ToUpperInvariant()
+
+    if (-not $dataLogical -and $type -eq 'D' -and -not [string]::IsNullOrWhiteSpace($logical)) {
+        $dataLogical = $logical
+    }
+    elseif (-not $logLogical -and $type -eq 'L' -and -not [string]::IsNullOrWhiteSpace($logical)) {
+        $logLogical = $logical
     }
 }
-$dataLogical = ($parsed | Where-Object Type -eq 'D' | Select-Object -First 1).Logical
-$logLogical  = ($parsed | Where-Object Type -eq 'L' | Select-Object -First 1).Logical
-if (-not $dataLogical -or -not $logLogical) { throw 'No pude identificar LogicalName de datos/log.' }
+
+# Respaldo BarMan histórico: estos LogicalName ya fueron confirmados mediante
+# RESTORE FILELISTONLY en esta instalación. El fallback evita que diferencias
+# de formato de sqlcmd bloqueen una restauración válida.
+if (-not $dataLogical) {
+    $barManDataLine = $fileList | Where-Object { ([string]$_) -match '^\s*BarMan\s*\|' } | Select-Object -First 1
+    if ($barManDataLine) { $dataLogical = 'BarMan' }
+}
+if (-not $logLogical) {
+    $barManLogLine = $fileList | Where-Object { ([string]$_) -match '^\s*BarMan_log\s*\|' } | Select-Object -First 1
+    if ($barManLogLine) { $logLogical = 'BarMan_log' }
+}
+
+# Último fallback para respaldos BarMan de esta misma familia.
+if (-not $dataLogical -and -not $logLogical) {
+    Write-Host "    AVISO: sqlcmd no permitió interpretar FILELISTONLY; usando nombres lógicos BarMan conocidos." -ForegroundColor Yellow
+    $dataLogical = 'BarMan'
+    $logLogical = 'BarMan_log'
+}
+
+if (-not $dataLogical -or -not $logLogical) {
+    $rawFileList = ($fileList | ForEach-Object { [string]$_ }) -join "`n"
+    throw "No pude identificar LogicalName de datos/log.`nSalida RESTORE FILELISTONLY:`n$rawFileList"
+}
+
 Write-Ok "Datos=$dataLogical / Log=$logLogical"
 
 $dataRoot = Invoke-SqlServerScalar $Cfg.SqlServer "select cast(serverproperty('InstanceDefaultDataPath') as nvarchar(4000));"
@@ -212,7 +331,7 @@ WITH Pagos AS (
         SUM(CASE WHEN TipoDePagoNombre='American Express' THEN Payment ELSE 0 END) AmericanExpress
  FROM dbo.operationpaymentsbak GROUP BY OperationID
 )
-SELECT o.OperationIDint venta_id, o.OperationDate fecha,
+SELECT o.OperationIDint venta_id, CONVERT(varchar(19),o.OperationDate,120) fecha,
  CAST(ROUND(o.OperationSubTotal,2) AS decimal(18,2)) subtotal,
  CAST(ROUND(o.OperationTotal-o.OperationSubTotal,2) AS decimal(18,2)) iva,
  CAST(ROUND(o.OperationTotal,2) AS decimal(18,2)) total_venta,
@@ -266,7 +385,7 @@ WHERE o.OperationDate >= @StartDate
 ORDER BY vp.VentaID,vp.ID;
 "@
 $cortesiasQuery = @"
-SELECT o.OperationIDint venta_id, o.OperationDate fecha,
+SELECT o.OperationIDint venta_id, CONVERT(varchar(19),o.OperationDate,120) fecha,
  CAST(ROUND(o.OperationDiscount,2) AS decimal(18,2)) importe_cortesia,
  o.MesaNombre mesa_nombre, o.txtmeseronombre mesero, o.CajeroNombre cajero,
  o.SeccionNombre seccion_nombre, o.OperationComment operation_comment
@@ -311,9 +430,17 @@ $tables = @{
  'barman_ventas'=$ventasCsv; 'barman_productos'=$productosCsv; 'barman_pagos'=$pagosCsv; 'barman_cortesias'=$cortesiasCsv
 }
 $common=@{}
+$copyCsv=@{}
 foreach($t in $tables.Keys){
     $common[$t] = @(Common-Columns $tables[$t] $t)
     if($common[$t].Count -eq 0){throw "No hay columnas compatibles para $t."}
+
+    # PostgreSQL COPY exige que el número y orden de campos del CSV coincida
+    # exactamente con la lista declarada de columnas. Creamos un CSV proyectado
+    # únicamente con las columnas que existen tanto en BarMan como en Supabase.
+    $projected = Join-Path $runDir ("copy_" + $t + ".csv")
+    Export-CsvSubset $tables[$t] $projected $common[$t]
+    $copyCsv[$t] = $projected
 }
 
 $maxVenta = 0
@@ -335,17 +462,32 @@ if ($hasCategoria) {
         [void]$sb.AppendLine("CREATE TEMP TABLE cat_map AS SELECT DISTINCT ON (coalesce(producto_nombre,'')) producto_nombre, categoria FROM public.barman_productos WHERE categoria IS NOT NULL ORDER BY coalesce(producto_nombre,''),categoria;")
     }
 }
-foreach($x in @(@('barman_ventas','stg_v',$ventasCsv),@('barman_productos','stg_pr',$productosCsv),@('barman_pagos','stg_pg',$pagosCsv),@('barman_cortesias','stg_c',$cortesiasCsv))){
-    $table=$x[0];$stg=$x[1];$csv=$x[2];$cols=$common[$table]
+foreach($x in @(@('barman_ventas','stg_v'),@('barman_productos','stg_pr'),@('barman_pagos','stg_pg'),@('barman_cortesias','stg_c'))){
+    $table=$x[0];$stg=$x[1];$csv=$copyCsv[$table];$cols=$common[$table]
     [void]$sb.AppendLine("CREATE TEMP TABLE $stg (LIKE public.$table INCLUDING DEFAULTS);")
+    # LIKE siempre hereda los NOT NULL de la tabla real, aunque la columna no
+    # venga en el CSV de origen (p. ej. "categoria" no existe en BarMan y se
+    # reconstruye después via cat_map). Hay que relajar esa columna en la
+    # tabla temporal para poder cargarla con NULL antes del UPDATE de abajo.
+    if ($table -eq 'barman_productos' -and $hasCategoria) {
+        [void]$sb.AppendLine("ALTER TABLE $stg ALTER COLUMN categoria DROP NOT NULL;")
+    }
     [void]$sb.AppendLine("\copy $stg("+($cols -join ',')+") FROM '$(Csv-SqlPath $csv)' WITH (FORMAT csv, HEADER true, ENCODING 'UTF8');")
 }
+$pendientesCsv = Join-Path $runDir 'productos_sin_categoria.csv'
 if($hasCategoria){
     if ($hasProductoCodigo) {
         [void]$sb.AppendLine("UPDATE stg_pr s SET categoria=m.categoria FROM cat_map m WHERE s.categoria IS NULL AND ((s.producto_codigo IS NOT NULL AND m.producto_codigo::text=s.producto_codigo::text) OR (s.producto_nombre IS NOT NULL AND lower(m.producto_nombre)=lower(s.producto_nombre)));")
     } else {
         [void]$sb.AppendLine("UPDATE stg_pr s SET categoria=m.categoria FROM cat_map m WHERE s.categoria IS NULL AND s.producto_nombre IS NOT NULL AND lower(m.producto_nombre)=lower(s.producto_nombre);")
     }
+    # Productos que no hicieron match en cat_map: son nuevos y nadie los ha
+    # clasificado nunca. Se exportan ANTES de rellenarlos con el default para
+    # poder avisar cuáles faltan por capturar en Supabase.
+    [void]$sb.AppendLine("\copy (SELECT DISTINCT producto_codigo, producto_nombre FROM stg_pr WHERE categoria IS NULL ORDER BY producto_nombre) TO '$(Csv-SqlPath $pendientesCsv)' WITH (FORMAT csv, HEADER true, ENCODING 'UTF8');")
+    # Para no tronar la carga por un producto nuevo, se marca temporalmente
+    # como 'Sin clasificar'; el aviso de arriba es lo que permite corregirlo.
+    [void]$sb.AppendLine("UPDATE stg_pr SET categoria='Sin clasificar' WHERE categoria IS NULL;")
 }
 [void]$sb.AppendLine('DELETE FROM public.barman_pagos WHERE venta_id IN (SELECT venta_id FROM stg_v);')
 [void]$sb.AppendLine('DELETE FROM public.barman_productos WHERE venta_id IN (SELECT venta_id FROM stg_v);')
@@ -353,16 +495,36 @@ if($hasCategoria){
 [void]$sb.AppendLine('DELETE FROM public.barman_ventas WHERE venta_id IN (SELECT venta_id FROM stg_v);')
 foreach($x in @(@('barman_ventas','stg_v'),@('barman_productos','stg_pr'),@('barman_pagos','stg_pg'),@('barman_cortesias','stg_c'))){
     $table=$x[0];$stg=$x[1];$cols=$common[$table]
-    [void]$sb.AppendLine("INSERT INTO public.$table("+($cols -join ',')+") SELECT "+($cols -join ',')+" FROM $stg;")
+    # "categoria" no viene en el CSV de origen (BarMan no la tiene), por lo
+    # que Common-Columns nunca la incluye — pero sí quedó rellenada en la
+    # tabla temporal vía cat_map/'Sin clasificar'. Hay que agregarla a mano
+    # a la lista de columnas del INSERT final o Postgres usa su default
+    # (NULL) en la tabla real y truena el NOT NULL.
+    $insertCols = $cols
+    if ($table -eq 'barman_productos' -and $hasCategoria -and ($insertCols -notcontains 'categoria')) {
+        $insertCols = @($insertCols) + 'categoria'
+    }
+    [void]$sb.AppendLine("INSERT INTO public.$table("+($insertCols -join ',')+") SELECT "+($insertCols -join ',')+" FROM $stg;")
 }
 $detail="Ventana de $($Cfg.ReviewDays) días; reemplazo completo de VentaID afectados"
 [void]$sb.AppendLine("INSERT INTO public.barman_etl_ejecuciones(respaldo_nombre,respaldo_sha256,fecha_respaldo,ventana_desde,ventas_extraidas,productos_extraidos,pagos_extraidos,cortesias_extraidas,max_venta_id,estado,detalle) VALUES ("+(Quote-SqlLiteral $backupName)+","+(Quote-SqlLiteral $hash)+","+(Quote-SqlLiteral $backupMtime)+","+(Quote-SqlLiteral $startDate.ToString('yyyy-MM-dd'))+",$($ventas.Count),$($productos.Count),$($pagos.Count),$($dtCortesias.Rows.Count),$maxVenta,'ok',"+(Quote-SqlLiteral $detail)+");")
 [void]$sb.AppendLine('COMMIT;')
 [IO.File]::WriteAllText($sqlFile,$sb.ToString(),(New-Object Text.UTF8Encoding($false)))
 
-$args=@('-h',$Cfg.SupabaseHost,'-p',[string]$Cfg.SupabasePort,'-U',$Cfg.SupabaseUser,'-d',$Cfg.SupabaseDatabase,'-v','ON_ERROR_STOP=1','-f',$sqlFile)
-Invoke-Psql $args | Out-Host
+$importArgs=@('-h',$Cfg.SupabaseHost,'-p',[string]$Cfg.SupabasePort,'-U',$Cfg.SupabaseUser,'-d',$Cfg.SupabaseDatabase,'-v','ON_ERROR_STOP=1','-f',$sqlFile)
+Invoke-Psql $importArgs | Out-Host
 Write-Ok 'Supabase actualizado en una sola transacción'
+
+if ($hasCategoria -and (Test-Path $pendientesCsv)) {
+    $pendientes = @(Import-Csv $pendientesCsv)
+    if ($pendientes.Count -gt 0) {
+        $nombres = ($pendientes | Select-Object -First 8 -ExpandProperty producto_nombre) -join ', '
+        if ($pendientes.Count -gt 8) { $nombres += " y $($pendientes.Count - 8) más" }
+        # Línea con marcador fijo: Worker-Barman.ps1 la detecta y la agrega
+        # al mensaje que se ve en /reportes/actualizar-barman.
+        Write-Host "PRODUCTOS_PENDIENTES_CATEGORIA: $($pendientes.Count)|$nombres"
+    }
+}
 
 Write-Step 'Resumen'
 Write-Host "Respaldo:          $backupName"

@@ -1,0 +1,9 @@
+﻿CORRECCIÓN ETL BARMAN V6
+
+- Corrige el parser de RESTORE FILELISTONLY bajo Set-StrictMode.
+- Evita acceder a .Logical cuando no hubo objeto parseado.
+- Añade detección tolerante de datos/log.
+- Fallback BarMan / BarMan_log, previamente confirmados en este tipo de respaldo.
+- Conserva correcciones anteriores: PsqlArgs y tratamiento .bm2.
+
+Reemplazar Procesar-BarmanIncremental.ps1 y reintentar.

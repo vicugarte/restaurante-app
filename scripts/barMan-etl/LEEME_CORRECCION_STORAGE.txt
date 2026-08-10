@@ -1,0 +1,10 @@
+﻿CORRECCION WORKER BARMAN V2
+
+Cambio:
+- Corrige descarga desde bucket privado de Supabase Storage.
+- Usa /storage/v1/object/authenticated/barman-respaldos/...
+- Mejora el detalle de errores de descarga.
+
+Después de reemplazar Worker-Barman.ps1:
+1) Cambiar la carga fallida de 'error' a 'pendiente' en Supabase.
+2) Ejecutar de nuevo .\Worker-Barman.ps1

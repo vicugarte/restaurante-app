@@ -1,0 +1,9 @@
+﻿CORRECCIÓN ETL BARMAN V5
+
+- Ya no exige que el .bm2 empiece con la firma ASCII TAPE.
+- Si es ZIP, extrae un candidato.
+- Si no es ZIP, copia el .bm2 tal cual a .bak.
+- SQL Server valida el archivo con RESTORE FILELISTONLY.
+- Conserva la corrección PsqlArgs de V4.
+
+Reemplazar Procesar-BarmanIncremental.ps1 y reintentar.

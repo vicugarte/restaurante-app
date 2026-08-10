@@ -1,0 +1,12 @@
+﻿CORRECCIÓN ETL BARMAN - PSQL
+
+Causa:
+El parámetro de Invoke-Psql se llamaba $Args, que entra en conflicto con la
+variable automática $args de PowerShell. psql terminaba ejecutándose sin
+-h/-p/-U/-d, usando localhost y el usuario de Windows.
+
+Corrección:
+$Args -> $PsqlArgs
+@Args -> @PsqlArgs
+
+Reemplazar Procesar-BarmanIncremental.ps1 y volver a ejecutar el worker.
