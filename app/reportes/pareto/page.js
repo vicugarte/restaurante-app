@@ -1,6 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import {
+  ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ReferenceLine,
+} from 'recharts';
 import { supabase } from '../../../lib/supabaseClient';
 import { formatoMoneda } from '../../../lib/format';
 
@@ -163,6 +166,26 @@ export default function Pareto() {
     });
   }, [filas, filtroTipoVenta, filtroTipoRotacion, filtroTipoVR]);
 
+  const COLOR_VR = {
+    AA: '#1b7a5e', AB: '#3fa07f', AC: '#7fc7a8',
+    BA: '#c98a1f', BB: '#e0ac4d', BC: '#f2cf8f',
+    CA: '#c1443b', CB: '#dd7a71', CC: '#f0b3ad',
+  };
+
+  const puntosDispersión = useMemo(() => {
+    const porCuadrante = {};
+    for (const a of ['A', 'B', 'C']) {
+      for (const b of ['A', 'B', 'C']) {
+        porCuadrante[`${a}${b}`] = [];
+      }
+    }
+    for (const r of filas.detalle) {
+      if (!porCuadrante[r.tipoVR]) continue;
+      porCuadrante[r.tipoVR].push({ x: r.pctRotacion, y: r.pctTotal, nombre: r.nombre, tipoVR: r.tipoVR });
+    }
+    return porCuadrante;
+  }, [filas]);
+
   function alternarTipo(lista, setLista, letra) {
     setLista(lista.includes(letra) ? lista.filter((x) => x !== letra) : [...lista, letra]);
   }
@@ -251,41 +274,100 @@ export default function Pareto() {
             <p className="subtitulo" style={{ marginBottom: 12 }}>
               Productos agrupados por Tipo V-R (Venta × Rotación) — venta, unidades y rotación promedio de cada grupo.
             </p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 28, maxWidth: 720 }}>
-              {['A', 'B', 'C'].flatMap((filaVenta) =>
-                ['A', 'B', 'C'].map((colRotacion) => {
-                  const clave = `${filaVenta}${colRotacion}`;
-                  const c = matrizVentaConsumo[clave];
-                  return (
-                    <div
-                      key={clave}
-                      style={{
-                        border: `1px solid var(--linea)`,
-                        borderTop: `4px solid ${COLOR_TIPO[filaVenta]}`,
-                        borderRadius: 8,
-                        padding: '10px 12px',
-                        background: '#fff',
-                      }}
-                    >
-                      <div style={{ fontSize: '0.72rem', color: 'var(--texto-sutil)', marginBottom: 4 }}>
-                        <span style={claseTipo(filaVenta)}>{filaVenta}</span>
-                        <span style={{ margin: '0 3px' }}>×</span>
-                        <span style={claseTipo(colRotacion)}>{colRotacion}</span>
-                        {' '}({c.n} art.)
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 28, alignItems: 'start' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+                {['A', 'B', 'C'].flatMap((filaVenta) =>
+                  ['A', 'B', 'C'].map((colRotacion) => {
+                    const clave = `${filaVenta}${colRotacion}`;
+                    const c = matrizVentaConsumo[clave];
+                    return (
+                      <div
+                        key={clave}
+                        style={{
+                          border: `1px solid var(--linea)`,
+                          borderTop: `4px solid ${COLOR_TIPO[filaVenta]}`,
+                          borderRadius: 8,
+                          padding: '10px 12px',
+                          background: '#fff',
+                        }}
+                      >
+                        <div style={{ fontSize: '0.72rem', color: 'var(--texto-sutil)', marginBottom: 4 }}>
+                          <span style={claseTipo(filaVenta)}>{filaVenta}</span>
+                          <span style={{ margin: '0 3px' }}>×</span>
+                          <span style={claseTipo(colRotacion)}>{colRotacion}</span>
+                          {' '}({c.n} art.)
+                        </div>
+                        <div style={{ fontFamily: 'var(--fuente-datos)', fontWeight: 700, fontSize: '1rem', color: NAVY }}>
+                          {formatoMoneda(c.venta)}
+                        </div>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--texto-sutil)' }}>
+                          {c.unidades.toLocaleString('es-MX')} unidades
+                        </div>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--texto-sutil)' }}>
+                          Rotación prom.: {c.n > 0 ? (c.sumaPctRotacion / c.n).toFixed(1) : '0.0'}%
+                        </div>
                       </div>
-                      <div style={{ fontFamily: 'var(--fuente-datos)', fontWeight: 700, fontSize: '1rem', color: NAVY }}>
-                        {formatoMoneda(c.venta)}
-                      </div>
-                      <div style={{ fontSize: '0.78rem', color: 'var(--texto-sutil)' }}>
-                        {c.unidades.toLocaleString('es-MX')} unidades
-                      </div>
-                      <div style={{ fontSize: '0.78rem', color: 'var(--texto-sutil)' }}>
-                        Rotación prom.: {c.n > 0 ? (c.sumaPctRotacion / c.n).toFixed(1) : '0.0'}%
-                      </div>
-                    </div>
-                  );
-                })
-              )}
+                    );
+                  })
+                )}
+              </div>
+
+              <div style={{ border: '1px solid var(--linea)', borderRadius: 8, padding: '12px 14px', background: '#fff' }}>
+                <p style={{ fontSize: '0.78rem', color: 'var(--texto-sutil)', margin: '0 0 8px' }}>
+                  Cada punto es un artículo · eje X = % rotación · eje Y = % de venta · color = cuadrante Tipo V-R
+                </p>
+                <div style={{ width: '100%', height: 300 }}>
+                  <ResponsiveContainer>
+                    <ScatterChart margin={{ top: 10, right: 20, bottom: 10, left: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--linea)" />
+                      <XAxis
+                        type="number"
+                        dataKey="x"
+                        name="% Rotación"
+                        tick={{ fontSize: 10 }}
+                        tickFormatter={(v) => `${v.toFixed(0)}%`}
+                        label={{ value: '% Rotación', position: 'insideBottom', offset: -5, fontSize: 11 }}
+                      />
+                      <YAxis
+                        type="number"
+                        dataKey="y"
+                        name="% Venta"
+                        tick={{ fontSize: 10 }}
+                        tickFormatter={(v) => `${v.toFixed(0)}%`}
+                        label={{ value: '% Venta', angle: -90, position: 'insideLeft', fontSize: 11 }}
+                      />
+                      <Tooltip
+                        cursor={{ strokeDasharray: '3 3' }}
+                        formatter={(valor, nombre) => [`${Number(valor).toFixed(2)}%`, nombre]}
+                        labelFormatter={() => ''}
+                        content={({ active, payload }) => {
+                          if (!active || !payload || !payload.length) return null;
+                          const p = payload[0].payload;
+                          return (
+                            <div style={{ background: '#fff', border: '1px solid var(--linea)', borderRadius: 6, padding: '6px 10px', fontSize: '0.78rem' }}>
+                              <div style={{ fontWeight: 700, color: NAVY }}>{p.nombre}</div>
+                              <div>Tipo V-R: <strong>{p.tipoVR}</strong></div>
+                              <div>% Rotación: {p.x.toFixed(2)}%</div>
+                              <div>% Venta: {p.y.toFixed(2)}%</div>
+                            </div>
+                          );
+                        }}
+                      />
+                      {Object.entries(puntosDispersión).map(([clave, puntos]) => (
+                        <Scatter key={clave} name={clave} data={puntos} fill={COLOR_VR[clave]} />
+                      ))}
+                    </ScatterChart>
+                  </ResponsiveContainer>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 10px', marginTop: 8 }}>
+                  {Object.entries(puntosDispersión).map(([clave, puntos]) => (
+                    <span key={clave} style={{ fontSize: '0.72rem', color: 'var(--texto-sutil)' }}>
+                      <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: COLOR_VR[clave], marginRight: 4 }} />
+                      {clave} ({puntos.length})
+                    </span>
+                  ))}
+                </div>
+              </div>
             </div>
 
             <h2 style={{ fontFamily: 'var(--fuente-titulo)', fontSize: '1.3rem', color: NAVY, marginBottom: 4 }}>
