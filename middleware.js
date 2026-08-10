@@ -7,6 +7,7 @@ const RUTAS_COMERCIALES = [
   '/actualizar-contrasena',
   '/reportes/panel-comercial',
   '/reportes/grafica',
+  '/reportes/pareto',
   '/reportes/actualizar-barman',
 ];
 
