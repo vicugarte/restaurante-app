@@ -172,6 +172,8 @@ export default function Pareto() {
     CA: '#c1443b', CB: '#dd7a71', CC: '#f0b3ad',
   };
 
+  const [vistaGrafica, setVistaGrafica] = useState('venta'); // venta | rotacion | vr
+
   const puntosDispersión = useMemo(() => {
     const porCuadrante = {};
     for (const a of ['A', 'B', 'C']) {
@@ -184,6 +186,24 @@ export default function Pareto() {
       porCuadrante[r.tipoVR].push({ x: r.pctRotacion, y: r.pctTotal, nombre: r.nombre, tipoVR: r.tipoVR });
     }
     return porCuadrante;
+  }, [filas]);
+
+  const puntosVenta = useMemo(() => {
+    const porTipo = { A: [], B: [], C: [] };
+    for (const r of filas.detalle) {
+      if (!porTipo[r.tipoVenta]) continue;
+      porTipo[r.tipoVenta].push({ x: r.rankingVenta, y: r.paretoVentas, nombre: r.nombre, tipo: r.tipoVenta });
+    }
+    return porTipo;
+  }, [filas]);
+
+  const puntosRotacion = useMemo(() => {
+    const porTipo = { A: [], B: [], C: [] };
+    for (const r of filas.detalle) {
+      if (!porTipo[r.tipoRotacion]) continue;
+      porTipo[r.tipoRotacion].push({ x: r.rankingRotacion, y: r.paretoRotacion, nombre: r.nombre, tipo: r.tipoRotacion });
+    }
+    return porTipo;
   }, [filas]);
 
   function alternarTipo(lista, setLista, letra) {
@@ -313,60 +333,119 @@ export default function Pareto() {
               </div>
 
               <div style={{ border: '1px solid var(--linea)', borderRadius: 8, padding: '12px 14px', background: '#fff' }}>
-                <p style={{ fontSize: '0.78rem', color: 'var(--texto-sutil)', margin: '0 0 8px' }}>
-                  Cada punto es un artículo · eje X = % rotación · eje Y = % de venta · color = cuadrante Tipo V-R
-                </p>
-                <div style={{ width: '100%', height: 300 }}>
-                  <ResponsiveContainer>
-                    <ScatterChart margin={{ top: 10, right: 20, bottom: 10, left: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="var(--linea)" />
-                      <XAxis
-                        type="number"
-                        dataKey="x"
-                        name="% Rotación"
-                        tick={{ fontSize: 10 }}
-                        tickFormatter={(v) => `${v.toFixed(0)}%`}
-                        label={{ value: '% Rotación', position: 'insideBottom', offset: -5, fontSize: 11 }}
-                      />
-                      <YAxis
-                        type="number"
-                        dataKey="y"
-                        name="% Venta"
-                        tick={{ fontSize: 10 }}
-                        tickFormatter={(v) => `${v.toFixed(0)}%`}
-                        label={{ value: '% Venta', angle: -90, position: 'insideLeft', fontSize: 11 }}
-                      />
-                      <Tooltip
-                        cursor={{ strokeDasharray: '3 3' }}
-                        formatter={(valor, nombre) => [`${Number(valor).toFixed(2)}%`, nombre]}
-                        labelFormatter={() => ''}
-                        content={({ active, payload }) => {
-                          if (!active || !payload || !payload.length) return null;
-                          const p = payload[0].payload;
-                          return (
-                            <div style={{ background: '#fff', border: '1px solid var(--linea)', borderRadius: 6, padding: '6px 10px', fontSize: '0.78rem' }}>
-                              <div style={{ fontWeight: 700, color: NAVY }}>{p.nombre}</div>
-                              <div>Tipo V-R: <strong>{p.tipoVR}</strong></div>
-                              <div>% Rotación: {p.x.toFixed(2)}%</div>
-                              <div>% Venta: {p.y.toFixed(2)}%</div>
-                            </div>
-                          );
-                        }}
-                      />
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <p style={{ fontSize: '0.78rem', color: 'var(--texto-sutil)', margin: 0 }}>
+                    {vistaGrafica === 'vr' && 'Cada punto es un artículo · eje X = % rotación · eje Y = % de venta · color = cuadrante Tipo V-R'}
+                    {vistaGrafica === 'venta' && 'Cada punto es un artículo, ordenado por ranking de venta · eje Y = % acumulado (Pareto ventas) · líneas en 80% y 95%'}
+                    {vistaGrafica === 'rotacion' && 'Cada punto es un artículo, ordenado por ranking de rotación · eje Y = % acumulado (Pareto rotación) · líneas en 80% y 95%'}
+                  </p>
+                  <select
+                    value={vistaGrafica}
+                    onChange={(e) => setVistaGrafica(e.target.value)}
+                    style={{ width: 'auto', flexShrink: 0, marginLeft: 10 }}
+                  >
+                    <option value="venta">Vista: Venta</option>
+                    <option value="rotacion">Vista: Rotación</option>
+                    <option value="vr">Vista: V-R</option>
+                  </select>
+                </div>
+
+                {vistaGrafica === 'vr' && (
+                  <>
+                    <div style={{ width: '100%', height: 300 }}>
+                      <ResponsiveContainer>
+                        <ScatterChart margin={{ top: 10, right: 20, bottom: 10, left: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="var(--linea)" />
+                          <XAxis
+                            type="number" dataKey="x" name="% Rotación" tick={{ fontSize: 10 }}
+                            tickFormatter={(v) => `${v.toFixed(0)}%`}
+                            label={{ value: '% Rotación', position: 'insideBottom', offset: -5, fontSize: 11 }}
+                          />
+                          <YAxis
+                            type="number" dataKey="y" name="% Venta" tick={{ fontSize: 10 }}
+                            tickFormatter={(v) => `${v.toFixed(0)}%`}
+                            label={{ value: '% Venta', angle: -90, position: 'insideLeft', fontSize: 11 }}
+                          />
+                          <Tooltip
+                            cursor={{ strokeDasharray: '3 3' }}
+                            content={({ active, payload }) => {
+                              if (!active || !payload || !payload.length) return null;
+                              const p = payload[0].payload;
+                              return (
+                                <div style={{ background: '#fff', border: '1px solid var(--linea)', borderRadius: 6, padding: '6px 10px', fontSize: '0.78rem' }}>
+                                  <div style={{ fontWeight: 700, color: NAVY }}>{p.nombre}</div>
+                                  <div>Tipo V-R: <strong>{p.tipoVR}</strong></div>
+                                  <div>% Rotación: {p.x.toFixed(2)}%</div>
+                                  <div>% Venta: {p.y.toFixed(2)}%</div>
+                                </div>
+                              );
+                            }}
+                          />
+                          {Object.entries(puntosDispersión).map(([clave, puntos]) => (
+                            <Scatter key={clave} name={clave} data={puntos} fill={COLOR_VR[clave]} />
+                          ))}
+                        </ScatterChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 10px', marginTop: 8 }}>
                       {Object.entries(puntosDispersión).map(([clave, puntos]) => (
-                        <Scatter key={clave} name={clave} data={puntos} fill={COLOR_VR[clave]} />
+                        <span key={clave} style={{ fontSize: '0.72rem', color: 'var(--texto-sutil)' }}>
+                          <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: COLOR_VR[clave], marginRight: 4 }} />
+                          {clave} ({puntos.length})
+                        </span>
                       ))}
-                    </ScatterChart>
-                  </ResponsiveContainer>
-                </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 10px', marginTop: 8 }}>
-                  {Object.entries(puntosDispersión).map(([clave, puntos]) => (
-                    <span key={clave} style={{ fontSize: '0.72rem', color: 'var(--texto-sutil)' }}>
-                      <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: COLOR_VR[clave], marginRight: 4 }} />
-                      {clave} ({puntos.length})
-                    </span>
-                  ))}
-                </div>
+                    </div>
+                  </>
+                )}
+
+                {(vistaGrafica === 'venta' || vistaGrafica === 'rotacion') && (
+                  <>
+                    <div style={{ width: '100%', height: 300 }}>
+                      <ResponsiveContainer>
+                        <ScatterChart margin={{ top: 10, right: 20, bottom: 10, left: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="var(--linea)" />
+                          <XAxis
+                            type="number" dataKey="x" name="Ranking" tick={{ fontSize: 10 }}
+                            label={{ value: vistaGrafica === 'venta' ? 'Ranking de venta' : 'Ranking de rotación', position: 'insideBottom', offset: -5, fontSize: 11 }}
+                          />
+                          <YAxis
+                            type="number" dataKey="y" name="% acumulado" domain={[0, 100]} tick={{ fontSize: 10 }}
+                            tickFormatter={(v) => `${v.toFixed(0)}%`}
+                            label={{ value: '% acumulado (Pareto)', angle: -90, position: 'insideLeft', fontSize: 11 }}
+                          />
+                          <ReferenceLine y={80} stroke={COLOR_TIPO.A} strokeDasharray="4 4" label={{ value: '80%', fontSize: 10, fill: COLOR_TIPO.A }} />
+                          <ReferenceLine y={95} stroke={COLOR_TIPO.B} strokeDasharray="4 4" label={{ value: '95%', fontSize: 10, fill: COLOR_TIPO.B }} />
+                          <Tooltip
+                            cursor={{ strokeDasharray: '3 3' }}
+                            content={({ active, payload }) => {
+                              if (!active || !payload || !payload.length) return null;
+                              const p = payload[0].payload;
+                              return (
+                                <div style={{ background: '#fff', border: '1px solid var(--linea)', borderRadius: 6, padding: '6px 10px', fontSize: '0.78rem' }}>
+                                  <div style={{ fontWeight: 700, color: NAVY }}>{p.nombre}</div>
+                                  <div>Tipo: <strong style={claseTipo(p.tipo)}>{p.tipo}</strong></div>
+                                  <div>Ranking: {p.x}</div>
+                                  <div>% acumulado: {p.y.toFixed(2)}%</div>
+                                </div>
+                              );
+                            }}
+                          />
+                          {Object.entries(vistaGrafica === 'venta' ? puntosVenta : puntosRotacion).map(([tipo, puntos]) => (
+                            <Scatter key={tipo} name={tipo} data={puntos} fill={COLOR_TIPO[tipo]} />
+                          ))}
+                        </ScatterChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 10px', marginTop: 8 }}>
+                      {Object.entries(vistaGrafica === 'venta' ? puntosVenta : puntosRotacion).map(([tipo, puntos]) => (
+                        <span key={tipo} style={{ fontSize: '0.72rem', color: 'var(--texto-sutil)' }}>
+                          <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: COLOR_TIPO[tipo], marginRight: 4 }} />
+                          Tipo {tipo} ({puntos.length})
+                        </span>
+                      ))}
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
