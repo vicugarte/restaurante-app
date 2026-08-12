@@ -22,6 +22,41 @@ function tipoDeAcumulado(pct) {
   return 'C';
 }
 
+function colorGradiente(pct) {
+  const p = Math.max(0, Math.min(1, pct));
+  const rojo = [193, 68, 59], amarillo = [201, 138, 31], verde = [27, 122, 94];
+  let c1, c2, t;
+  if (p < 0.5) { c1 = rojo; c2 = amarillo; t = p / 0.5; } else { c1 = amarillo; c2 = verde; t = (p - 0.5) / 0.5; }
+  const r = Math.round(c1[0] + (c2[0] - c1[0]) * t);
+  const g = Math.round(c1[1] + (c2[1] - c1[1]) * t);
+  const b = Math.round(c1[2] + (c2[2] - c1[2]) * t);
+  return `rgba(${r},${g},${b},0.30)`;
+}
+function pctTipoLetra(letra) {
+  if (letra === 'A') return 1;
+  if (letra === 'B') return 0.5;
+  return 0;
+}
+function pctTipoVR(tipoVR) {
+  if (!tipoVR || tipoVR.length !== 2) return 0.5;
+  return (pctTipoLetra(tipoVR[0]) + pctTipoLetra(tipoVR[1])) / 2;
+}
+function calcularRangos(filas) {
+  const ventas = filas.map((r) => r.venta);
+  const rotaciones = filas.map((r) => r.rotacion);
+  const rankVentas = filas.map((r) => r.rankingVenta);
+  const rankRotaciones = filas.map((r) => r.rankingRotacion);
+  return {
+    venta: [Math.min(...ventas, 0), Math.max(...ventas, 1)],
+    rotacion: [Math.min(...rotaciones, 0), Math.max(...rotaciones, 1)],
+    rankingVenta: [Math.min(...rankVentas, 1), Math.max(...rankVentas, 1)],
+    rankingRotacion: [Math.min(...rankRotaciones, 1), Math.max(...rankRotaciones, 1)],
+  };
+}
+function pctEnRango(valor, [min, max]) {
+  return max > min ? (valor - min) / (max - min) : 0.5;
+}
+
 export default function Pareto() {
   const [fechaInicio, setFechaInicio] = useState('');
   const [fechaFin, setFechaFin] = useState('');
@@ -229,6 +264,8 @@ export default function Pareto() {
       .sort((a, b) => a.rankingVenta - b.rankingVenta);
     return { alimentos, bebidas };
   }, [filas]);
+
+  const rangosCalor = useMemo(() => calcularRangos(filas.detalle), [filas]);
 
   function alternarTipo(lista, setLista, letra) {
     setLista(lista.includes(letra) ? lista.filter((x) => x !== letra) : [...lista, letra]);
@@ -578,16 +615,16 @@ export default function Pareto() {
                       <td className="nombre">{r.nombre}</td>
                       <td className="monto">{r.unidades.toLocaleString('es-MX')}</td>
                       <td className="monto">{formatoMoneda(r.precioUnitario)}</td>
-                      <td className="monto">{formatoMoneda(r.venta)}</td>
+                      <td className="monto" style={{ background: colorGradiente(pctEnRango(r.venta, rangosCalor.venta)) }}>{formatoMoneda(r.venta)}</td>
                       <td className="monto">{r.pctTotal.toFixed(2)}%</td>
                       <td className="monto">{r.paretoVentas.toFixed(2)}%</td>
-                      <td style={claseTipo(r.tipoVenta)}>{r.tipoVenta}</td>
-                      <td className="monto">{r.rankingVenta}</td>
-                      <td className="monto">{r.rotacion.toLocaleString('es-MX')}</td>
+                      <td style={{ ...claseTipo(r.tipoVenta), background: colorGradiente(pctTipoLetra(r.tipoVenta)) }}>{r.tipoVenta}</td>
+                      <td className="monto" style={{ background: colorGradiente(1 - pctEnRango(r.rankingVenta, rangosCalor.rankingVenta)) }}>{r.rankingVenta}</td>
+                      <td className="monto" style={{ background: colorGradiente(pctEnRango(r.rotacion, rangosCalor.rotacion)) }}>{r.rotacion.toLocaleString('es-MX')}</td>
                       <td className="monto">{r.pctRotacion.toFixed(2)}%</td>
-                      <td className="monto">{r.rankingRotacion}</td>
-                      <td style={claseTipo(r.tipoRotacion)}>{r.tipoRotacion}</td>
-                      <td style={{ fontWeight: 700, color: NAVY }}>{r.tipoVR}</td>
+                      <td className="monto" style={{ background: colorGradiente(1 - pctEnRango(r.rankingRotacion, rangosCalor.rankingRotacion)) }}>{r.rankingRotacion}</td>
+                      <td style={{ ...claseTipo(r.tipoRotacion), background: colorGradiente(pctTipoLetra(r.tipoRotacion)) }}>{r.tipoRotacion}</td>
+                      <td style={{ fontWeight: 700, color: NAVY, background: colorGradiente(pctTipoVR(r.tipoVR)) }}>{r.tipoVR}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -25,44 +25,52 @@ function claveSemana(fechaStr) {
   lunes.setDate(d.getDate() + diff);
   return lunes.toISOString().slice(0, 10);
 }
+function numeroSemanaISO(fecha) {
+  const d = new Date(Date.UTC(fecha.getFullYear(), fecha.getMonth(), fecha.getDate()));
+  const diaSemana = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - diaSemana);
+  const inicioAnio = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const numero = Math.ceil(((d - inicioAnio) / 86400000 + 1) / 7);
+  return { anio: d.getUTCFullYear(), numero };
+}
 function etiquetaSemana(claveLunes) {
   const lunes = new Date(`${claveLunes}T00:00:00`);
-  const domingo = new Date(lunes);
-  domingo.setDate(lunes.getDate() + 6);
-  const fmt = (d) => `${d.getDate()}/${d.getMonth() + 1}`;
-  return `${fmt(lunes)}-${fmt(domingo)}`;
+  const { anio, numero } = numeroSemanaISO(lunes);
+  const anioCorto = String(anio).slice(-2);
+  return `${anioCorto}-S${numero}`;
 }
 function obtenerAnios(lista) {
   return [...new Set(lista.map((v) => v.fecha?.slice(0, 4)).filter(Boolean))].sort();
 }
-function obtenerMesesDisponibles(lista, anio) {
-  const filtradas = anio ? lista.filter((v) => v.fecha?.slice(0, 4) === anio) : lista;
+function obtenerMesesDisponibles(lista, anios) {
+  const filtradas = anios && anios.length > 0 ? lista.filter((v) => anios.includes(v.fecha?.slice(0, 4))) : lista;
   return [...new Set(filtradas.map((v) => v.fecha?.slice(5, 7)).filter(Boolean))].sort();
 }
-function obtenerSemanasDisponibles(lista, anio, meses) {
+function obtenerSemanasDisponibles(lista, anios, meses) {
   let filtradas = lista;
-  if (anio) filtradas = filtradas.filter((v) => v.fecha?.slice(0, 4) === anio);
+  if (anios && anios.length > 0) filtradas = filtradas.filter((v) => anios.includes(v.fecha?.slice(0, 4)));
   if (meses && meses.length > 0) filtradas = filtradas.filter((v) => meses.includes(v.fecha?.slice(5, 7)));
   return [...new Set(filtradas.map((v) => claveSemana(v.fecha.slice(0, 10))))].sort();
 }
-function filtrarPorAnioMesSemana(lista, anio, meses, semanas) {
+function filtrarPorAnioMesSemana(lista, anios, meses, semanas) {
   return lista.filter((v) => {
     if (!v.fecha) return false;
     const f = v.fecha.slice(0, 10);
-    if (anio && f.slice(0, 4) !== anio) return false;
+    if (anios && anios.length > 0 && !anios.includes(f.slice(0, 4))) return false;
     if (meses && meses.length > 0 && !meses.includes(f.slice(5, 7))) return false;
     if (semanas && semanas.length > 0 && !semanas.includes(claveSemana(f))) return false;
     return true;
   });
 }
 
-function FiltroPeriodo({ ventasBase, anio, setAnio, meses, setMeses, semanas, setSemanas, titulo }) {
-  const anios = useMemo(() => obtenerAnios(ventasBase), [ventasBase]);
-  const mesesDisp = useMemo(() => obtenerMesesDisponibles(ventasBase, anio), [ventasBase, anio]);
-  const semanasDisp = useMemo(() => obtenerSemanasDisponibles(ventasBase, anio, meses), [ventasBase, anio, meses]);
+function FiltroPeriodo({ ventasBase, anios, setAnios, meses, setMeses, semanas, setSemanas, titulo }) {
+  const aniosDisp = useMemo(() => obtenerAnios(ventasBase), [ventasBase]);
+  const mesesDisp = useMemo(() => obtenerMesesDisponibles(ventasBase, anios), [ventasBase, anios]);
+  const semanasDisp = useMemo(() => obtenerSemanasDisponibles(ventasBase, anios, meses), [ventasBase, anios, meses]);
 
-  function cambiarAnio(a) {
-    setAnio(a);
+  function alternarAnio(a) {
+    const nuevos = anios.includes(a) ? anios.filter((x) => x !== a) : [...anios, a];
+    setAnios(nuevos);
     setMeses([]);
     setSemanas([]);
   }
@@ -78,13 +86,24 @@ function FiltroPeriodo({ ventasBase, anio, setAnio, meses, setMeses, semanas, se
     <div style={{ marginBottom: 12, border: '1px solid var(--linea)', borderRadius: 8, padding: '10px 12px', background: '#faf7f0' }}>
       {titulo && <p style={{ fontSize: '0.78rem', fontWeight: 700, color: NAVY, margin: '0 0 8px' }}>{titulo}</p>}
       <div style={{ marginBottom: 8 }}>
-        <label style={{ fontSize: '0.74rem', color: 'var(--texto-sutil)' }}>Año</label>
-        <select value={anio} onChange={(e) => cambiarAnio(e.target.value)} style={{ maxWidth: 180 }}>
-          <option value="">Total período</option>
-          {anios.map((a) => (
-            <option key={a} value={a}>{a}</option>
+        <label style={{ fontSize: '0.74rem', color: 'var(--texto-sutil)' }}>
+          Año(s) {anios.length === 0 && '— Total período'}
+        </label>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 4 }}>
+          {aniosDisp.map((a) => (
+            <label
+              key={a}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 3, fontSize: '0.74rem',
+                border: '1px solid var(--linea)', borderRadius: 6, padding: '3px 7px',
+                background: anios.includes(a) ? 'var(--acento-suave)' : '#fff', cursor: 'pointer',
+              }}
+            >
+              <input type="checkbox" checked={anios.includes(a)} onChange={() => alternarAnio(a)} style={{ width: 'auto' }} />
+              {a}
+            </label>
           ))}
-        </select>
+        </div>
       </div>
       <div style={{ marginBottom: 8 }}>
         <label style={{ fontSize: '0.74rem', color: 'var(--texto-sutil)' }}>Mes(es)</label>
@@ -178,15 +197,15 @@ export default function PanelComercial() {
   const [cortesias, setCortesias] = useState([]);
   const [cargando, setCargando] = useState(true);
 
-  const [pmAnio, setPmAnio] = useState('');
+  const [pmAnio, setPmAnio] = useState([]);
   const [pmMeses, setPmMeses] = useState([]);
   const [pmSemanas, setPmSemanas] = useState([]);
 
-  const [horas1Anio, setHoras1Anio] = useState('');
+  const [horas1Anio, setHoras1Anio] = useState([]);
   const [horas1Meses, setHoras1Meses] = useState([]);
   const [horas1Semanas, setHoras1Semanas] = useState([]);
   const [compararHoras, setCompararHoras] = useState(false);
-  const [horas2Anio, setHoras2Anio] = useState('');
+  const [horas2Anio, setHoras2Anio] = useState([]);
   const [horas2Meses, setHoras2Meses] = useState([]);
   const [horas2Semanas, setHoras2Semanas] = useState([]);
 
@@ -374,7 +393,7 @@ export default function PanelComercial() {
 
         <FiltroPeriodo
           ventasBase={ventas}
-          anio={pmAnio} setAnio={setPmAnio}
+          anios={pmAnio} setAnios={setPmAnio}
           meses={pmMeses} setMeses={setPmMeses}
           semanas={pmSemanas} setSemanas={setPmSemanas}
           titulo="Filtrar Productos más vendidos y Mezcla de venta"
@@ -445,7 +464,7 @@ export default function PanelComercial() {
         <TarjetaSeccion titulo="Horas pico" subtitulo="Ventas totales por hora del día — se omiten las horas sin venta en el período">
           <FiltroPeriodo
             ventasBase={ventas}
-            anio={horas1Anio} setAnio={setHoras1Anio}
+            anios={horas1Anio} setAnios={setHoras1Anio}
             meses={horas1Meses} setMeses={setHoras1Meses}
             semanas={horas1Semanas} setSemanas={setHoras1Semanas}
             titulo="Período 1"
@@ -463,7 +482,7 @@ export default function PanelComercial() {
           {compararHoras && (
             <FiltroPeriodo
               ventasBase={ventas}
-              anio={horas2Anio} setAnio={setHoras2Anio}
+              anios={horas2Anio} setAnios={setHoras2Anio}
               meses={horas2Meses} setMeses={setHoras2Meses}
               semanas={horas2Semanas} setSemanas={setHoras2Semanas}
               titulo="Período 2 (comparativo)"
