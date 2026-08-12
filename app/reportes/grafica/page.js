@@ -60,16 +60,30 @@ function fechaLocalISO(valor) {
   return `${y}-${m}-${d}`;
 }
 
+function semanaISO(fecha) {
+  const d = new Date(Date.UTC(fecha.getFullYear(), fecha.getMonth(), fecha.getDate()));
+  const diaNum = (d.getUTCDay() + 6) % 7; // lunes = 0
+  d.setUTCDate(d.getUTCDate() - diaNum + 3);
+  const primerJueves = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+  const semana = 1 + Math.round(((d - primerJueves) / 86400000 - 3 + ((primerJueves.getUTCDay() + 6) % 7)) / 7);
+  return { anio: d.getUTCFullYear(), semana };
+}
+
 function claveDePeriodo(fecha, periodicidad) {
   const iso = fechaLocalISO(fecha);
   if (!iso) return null;
   if (periodicidad === 'dia') return iso;
   if (periodicidad === 'anio') return iso.slice(0, 4);
+  if (periodicidad === 'semana') {
+    const { anio, semana } = semanaISO(new Date(`${iso}T00:00:00`));
+    return `${anio}-W${String(semana).padStart(2, '0')}`;
+  }
   return iso.slice(0, 7);
 }
 
 function etiquetaPeriodo(clave, periodicidad) {
   if (periodicidad === 'anio') return clave;
+  if (periodicidad === 'semana') return clave;
   if (periodicidad === 'mes') {
     const [anio, mes] = clave.split('-');
     const fecha = new Date(Number(anio), Number(mes) - 1, 1);
@@ -249,27 +263,63 @@ export default function Grafica() {
     [productos],
   );
 
-  const catalogoPorCategoria = useMemo(() => {
-    const sets = { Alimentos: new Set(), Bebidas: new Set() };
+  const rankingProductos = useMemo(() => {
+    const grupos = {};
     for (const p of productosValidos) {
       const nombre = String(p.producto_nombre || '').trim();
       if (!nombre) continue;
-      sets[categoriaComercial(p)].add(nombre);
+      if (!grupos[nombre]) grupos[nombre] = { nombre, venta: 0, unidades: 0 };
+      grupos[nombre].venta += Number(p.importe_lista || 0);
+      grupos[nombre].unidades += Number(p.cantidad || 0);
     }
-    return {
-      Alimentos: Array.from(sets.Alimentos).sort((a, b) => a.localeCompare(b, 'es')),
-      Bebidas: Array.from(sets.Bebidas).sort((a, b) => a.localeCompare(b, 'es')),
-    };
+    let lista = Object.values(grupos);
+    const totalVenta = lista.reduce((s, r) => s + r.venta, 0);
+    const totalUnidades = lista.reduce((s, r) => s + r.unidades, 0);
+
+    lista.sort((a, b) => b.venta - a.venta);
+    let acumVenta = 0;
+    lista.forEach((r, i) => {
+      r.rankingVenta = i + 1;
+      acumVenta += totalVenta > 0 ? (r.venta / totalVenta) * 100 : 0;
+      r.tipoVenta = acumVenta <= 80 ? 'A' : acumVenta <= 95 ? 'B' : 'C';
+    });
+
+    const porRotacion = [...lista].sort((a, b) => b.unidades - a.unidades);
+    let acumRotacion = 0;
+    porRotacion.forEach((r) => {
+      acumRotacion += totalUnidades > 0 ? (r.unidades / totalUnidades) * 100 : 0;
+      r.tipoRotacion = acumRotacion <= 80 ? 'A' : acumRotacion <= 95 ? 'B' : 'C';
+    });
+
+    const mapa = {};
+    for (const r of lista) mapa[r.nombre] = r;
+    return mapa;
   }, [productosValidos]);
+
+  const catalogoPorCategoria = useMemo(() => {
+    const listas = { Alimentos: [], Bebidas: [] };
+    const vistos = { Alimentos: new Set(), Bebidas: new Set() };
+    for (const p of productosValidos) {
+      const nombre = String(p.producto_nombre || '').trim();
+      if (!nombre) continue;
+      const cat = categoriaComercial(p);
+      if (vistos[cat].has(nombre)) continue;
+      vistos[cat].add(nombre);
+      listas[cat].push(rankingProductos[nombre] || { nombre, rankingVenta: 999999, tipoVenta: '—', tipoRotacion: '—' });
+    }
+    listas.Alimentos.sort((a, b) => a.rankingVenta - b.rankingVenta);
+    listas.Bebidas.sort((a, b) => a.rankingVenta - b.rankingVenta);
+    return listas;
+  }, [productosValidos, rankingProductos]);
 
   const alimentosFiltrados = useMemo(() => {
     const q = buscarAlimento.trim().toLowerCase();
-    return q ? catalogoPorCategoria.Alimentos.filter((x) => x.toLowerCase().includes(q)) : catalogoPorCategoria.Alimentos;
+    return q ? catalogoPorCategoria.Alimentos.filter((x) => x.nombre.toLowerCase().includes(q)) : catalogoPorCategoria.Alimentos;
   }, [catalogoPorCategoria, buscarAlimento]);
 
   const bebidasFiltradas = useMemo(() => {
     const q = buscarBebida.trim().toLowerCase();
-    return q ? catalogoPorCategoria.Bebidas.filter((x) => x.toLowerCase().includes(q)) : catalogoPorCategoria.Bebidas;
+    return q ? catalogoPorCategoria.Bebidas.filter((x) => x.nombre.toLowerCase().includes(q)) : catalogoPorCategoria.Bebidas;
   }, [catalogoPorCategoria, buscarBebida]);
 
   const datosTiempoBase = useMemo(() => {
@@ -428,7 +478,8 @@ export default function Grafica() {
         <div style={{ maxHeight: 290, overflowY: 'auto', border: '1px solid var(--linea)', borderRadius: 8, padding: 8 }}>
           {productosLista.length === 0 ? (
             <div className="subtitulo" style={{ padding: 8 }}>No hay productos que coincidan.</div>
-          ) : productosLista.map((nombre) => {
+          ) : productosLista.map((info) => {
+            const nombre = info.nombre;
             const checked = productosSeleccionados.includes(nombre);
             const limite = !checked && productosSeleccionados.length >= MAX_PRODUCTOS;
             return (
@@ -440,7 +491,10 @@ export default function Grafica() {
                   onChange={() => alternarProducto(nombre)}
                   style={{ width: 'auto', margin: 0 }}
                 />
-                <span>{nombre}</span>
+                <span style={{ flex: 1 }}>{nombre}</span>
+                <span style={{ fontSize: '0.68rem', color: 'var(--texto-sutil)', fontFamily: 'var(--fuente-datos)', whiteSpace: 'nowrap' }}>
+                  #{info.rankingVenta} · V:{info.tipoVenta} · R:{info.tipoRotacion}
+                </span>
               </label>
             );
           })}
@@ -474,7 +528,7 @@ export default function Grafica() {
           <div>
             <label>Ver por</label>
             <select value={periodicidad} onChange={(e) => setPeriodicidad(e.target.value)}>
-              <option value="dia">Día</option><option value="mes">Mes</option><option value="anio">Año</option>
+              <option value="dia">Día</option><option value="semana">Semana</option><option value="mes">Mes</option><option value="anio">Año</option>
             </select>
           </div>
           <div>

@@ -13,6 +13,118 @@ const TEAL = '#0fa8c2';
 const ROSA = '#eb9dc2';
 const VERDE = '#1b7a5e';
 const PALETA = [CORAL, TEAL, NAVY, ROSA, VERDE, '#c1443b', '#756a5c', '#9c6b30'];
+const TONOS_NARANJA = ['#e8603c', '#ef7d5c', '#f3986f', '#f7b394', '#fbceb9', '#fee4d6', '#ffdcc4', '#ffcaa8', '#ffe0c2', '#fff0e3'];
+const TONOS_AZUL = ['#0b2545', '#173a68', '#24508c', '#3268ab', '#5487c4', '#7ea8d8', '#9fc0e6', '#c2d8f0', '#132f56', '#1e4577'];
+const NOMBRES_MES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+
+function claveSemana(fechaStr) {
+  const d = new Date(`${fechaStr}T00:00:00`);
+  const dia = d.getDay();
+  const diff = (dia === 0 ? -6 : 1) - dia;
+  const lunes = new Date(d);
+  lunes.setDate(d.getDate() + diff);
+  return lunes.toISOString().slice(0, 10);
+}
+function etiquetaSemana(claveLunes) {
+  const lunes = new Date(`${claveLunes}T00:00:00`);
+  const domingo = new Date(lunes);
+  domingo.setDate(lunes.getDate() + 6);
+  const fmt = (d) => `${d.getDate()}/${d.getMonth() + 1}`;
+  return `${fmt(lunes)}-${fmt(domingo)}`;
+}
+function obtenerAnios(lista) {
+  return [...new Set(lista.map((v) => v.fecha?.slice(0, 4)).filter(Boolean))].sort();
+}
+function obtenerMesesDisponibles(lista, anio) {
+  const filtradas = anio ? lista.filter((v) => v.fecha?.slice(0, 4) === anio) : lista;
+  return [...new Set(filtradas.map((v) => v.fecha?.slice(5, 7)).filter(Boolean))].sort();
+}
+function obtenerSemanasDisponibles(lista, anio, meses) {
+  let filtradas = lista;
+  if (anio) filtradas = filtradas.filter((v) => v.fecha?.slice(0, 4) === anio);
+  if (meses && meses.length > 0) filtradas = filtradas.filter((v) => meses.includes(v.fecha?.slice(5, 7)));
+  return [...new Set(filtradas.map((v) => claveSemana(v.fecha.slice(0, 10))))].sort();
+}
+function filtrarPorAnioMesSemana(lista, anio, meses, semanas) {
+  return lista.filter((v) => {
+    if (!v.fecha) return false;
+    const f = v.fecha.slice(0, 10);
+    if (anio && f.slice(0, 4) !== anio) return false;
+    if (meses && meses.length > 0 && !meses.includes(f.slice(5, 7))) return false;
+    if (semanas && semanas.length > 0 && !semanas.includes(claveSemana(f))) return false;
+    return true;
+  });
+}
+
+function FiltroPeriodo({ ventasBase, anio, setAnio, meses, setMeses, semanas, setSemanas, titulo }) {
+  const anios = useMemo(() => obtenerAnios(ventasBase), [ventasBase]);
+  const mesesDisp = useMemo(() => obtenerMesesDisponibles(ventasBase, anio), [ventasBase, anio]);
+  const semanasDisp = useMemo(() => obtenerSemanasDisponibles(ventasBase, anio, meses), [ventasBase, anio, meses]);
+
+  function cambiarAnio(a) {
+    setAnio(a);
+    setMeses([]);
+    setSemanas([]);
+  }
+  function alternarMes(m) {
+    setMeses(meses.includes(m) ? meses.filter((x) => x !== m) : [...meses, m]);
+    setSemanas([]);
+  }
+  function alternarSemana(s) {
+    setSemanas(semanas.includes(s) ? semanas.filter((x) => x !== s) : [...semanas, s]);
+  }
+
+  return (
+    <div style={{ marginBottom: 12, border: '1px solid var(--linea)', borderRadius: 8, padding: '10px 12px', background: '#faf7f0' }}>
+      {titulo && <p style={{ fontSize: '0.78rem', fontWeight: 700, color: NAVY, margin: '0 0 8px' }}>{titulo}</p>}
+      <div style={{ marginBottom: 8 }}>
+        <label style={{ fontSize: '0.74rem', color: 'var(--texto-sutil)' }}>Año</label>
+        <select value={anio} onChange={(e) => cambiarAnio(e.target.value)} style={{ maxWidth: 180 }}>
+          <option value="">Total período</option>
+          {anios.map((a) => (
+            <option key={a} value={a}>{a}</option>
+          ))}
+        </select>
+      </div>
+      <div style={{ marginBottom: 8 }}>
+        <label style={{ fontSize: '0.74rem', color: 'var(--texto-sutil)' }}>Mes(es)</label>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 4 }}>
+          {mesesDisp.map((m) => (
+            <label
+              key={m}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 3, fontSize: '0.74rem',
+                border: '1px solid var(--linea)', borderRadius: 6, padding: '3px 7px',
+                background: meses.includes(m) ? 'var(--acento-suave)' : '#fff', cursor: 'pointer',
+              }}
+            >
+              <input type="checkbox" checked={meses.includes(m)} onChange={() => alternarMes(m)} style={{ width: 'auto' }} />
+              {NOMBRES_MES[parseInt(m, 10) - 1]}
+            </label>
+          ))}
+        </div>
+      </div>
+      <div>
+        <label style={{ fontSize: '0.74rem', color: 'var(--texto-sutil)' }}>Semana(s)</label>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 4, maxHeight: 70, overflowY: 'auto' }}>
+          {semanasDisp.map((s) => (
+            <label
+              key={s}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 3, fontSize: '0.7rem',
+                border: '1px solid var(--linea)', borderRadius: 6, padding: '3px 7px',
+                background: semanas.includes(s) ? 'var(--acento-suave)' : '#fff', cursor: 'pointer',
+              }}
+            >
+              <input type="checkbox" checked={semanas.includes(s)} onChange={() => alternarSemana(s)} style={{ width: 'auto' }} />
+              {etiquetaSemana(s)}
+            </label>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function Tarjeta({ etiqueta, valor, detalle, color }) {
   return (
@@ -66,12 +178,24 @@ export default function PanelComercial() {
   const [cortesias, setCortesias] = useState([]);
   const [cargando, setCargando] = useState(true);
 
+  const [pmAnio, setPmAnio] = useState('');
+  const [pmMeses, setPmMeses] = useState([]);
+  const [pmSemanas, setPmSemanas] = useState([]);
+
+  const [horas1Anio, setHoras1Anio] = useState('');
+  const [horas1Meses, setHoras1Meses] = useState([]);
+  const [horas1Semanas, setHoras1Semanas] = useState([]);
+  const [compararHoras, setCompararHoras] = useState(false);
+  const [horas2Anio, setHoras2Anio] = useState('');
+  const [horas2Meses, setHoras2Meses] = useState([]);
+  const [horas2Semanas, setHoras2Semanas] = useState([]);
+
   useEffect(() => {
     async function cargar() {
       setCargando(true);
       const [v, p, pg, c] = await Promise.all([
         supabase.from('barman_ventas').select('venta_id, fecha, total_venta, propina, mesero_nombre, seccion_nombre'),
-        supabase.from('barman_productos').select('producto_nombre, categoria, cantidad, importe_lista, es_modificador'),
+        supabase.from('barman_productos').select('venta_id, producto_nombre, categoria, cantidad, importe_lista, es_modificador'),
         supabase.from('barman_pagos').select('forma_pago, cobro_mas_propina'),
         supabase.from('barman_cortesias').select('importe_cortesia, mesero'),
       ]);
@@ -101,30 +225,39 @@ export default function PanelComercial() {
     };
   }, [ventas, cortesias]);
 
+  const productosFiltradosPm = useMemo(() => {
+    const ventasFiltradas = filtrarPorAnioMesSemana(ventas, pmAnio, pmMeses, pmSemanas);
+    const idsValidos = new Set(ventasFiltradas.map((v) => v.venta_id));
+    if (!pmAnio && pmMeses.length === 0 && pmSemanas.length === 0) return productos; // sin filtro: todo el período
+    return productos.filter((p) => idsValidos.has(p.venta_id));
+  }, [productos, ventas, pmAnio, pmMeses, pmSemanas]);
+
   const topProductosIngreso = useMemo(() => {
     const mapa = {};
-    for (const p of productos) {
+    for (const p of productosFiltradosPm) {
       if (p.es_modificador) continue;
       const nombre = p.producto_nombre;
       if (!mapa[nombre]) mapa[nombre] = { ingreso: 0, categoria: p.categoria };
       mapa[nombre].ingreso += Number(p.importe_lista || 0);
     }
-    return Object.entries(mapa)
-      .map(([nombre, d]) => ({ nombre, ingreso: d.ingreso, categoria: d.categoria }))
+    const alimentos = Object.entries(mapa).filter(([, d]) => d.categoria !== 'bebida').sort((a, b) => b[1].ingreso - a[1].ingreso);
+    const bebidas = Object.entries(mapa).filter(([, d]) => d.categoria === 'bebida').sort((a, b) => b[1].ingreso - a[1].ingreso);
+    const conColor = (lista, tonos) => lista.map(([nombre, d], i) => ({ nombre, ingreso: d.ingreso, categoria: d.categoria, color: tonos[Math.min(i, tonos.length - 1)] }));
+    return [...conColor(alimentos, TONOS_NARANJA), ...conColor(bebidas, TONOS_AZUL)]
       .sort((a, b) => b.ingreso - a.ingreso)
       .slice(0, 10);
-  }, [productos]);
+  }, [productosFiltradosPm]);
 
   const mixCategoria = useMemo(() => {
     let alimento = 0, bebida = 0;
-    for (const p of productos) {
+    for (const p of productosFiltradosPm) {
       if (p.es_modificador) continue;
       if (p.categoria === 'bebida') bebida += Number(p.importe_lista || 0);
       else alimento += Number(p.importe_lista || 0);
     }
     const total = alimento + bebida;
     return { alimento, bebida, total, pctAlimento: total ? (alimento / total) * 100 : 0, pctBebida: total ? (bebida / total) * 100 : 0 };
-  }, [productos]);
+  }, [productosFiltradosPm]);
 
   const topMeseros = useMemo(() => {
     const mapa = {};
@@ -170,15 +303,11 @@ export default function PanelComercial() {
     });
   }
 
-  const [horasDesde1, setHorasDesde1] = useState('');
-  const [horasHasta1, setHorasHasta1] = useState('');
-  const [compararHoras, setCompararHoras] = useState(false);
-  const [horasDesde2, setHorasDesde2] = useState('');
-  const [horasHasta2, setHorasHasta2] = useState('');
-
   const porHora = useMemo(() => {
-    const periodo1 = calcularVentaPorHora(filtrarVentasPorRango(ventas, horasDesde1, horasHasta1));
-    const periodo2 = compararHoras ? calcularVentaPorHora(filtrarVentasPorRango(ventas, horasDesde2, horasHasta2)) : null;
+    const ventasP1 = filtrarPorAnioMesSemana(ventas, horas1Anio, horas1Meses, horas1Semanas);
+    const periodo1 = calcularVentaPorHora(ventasP1);
+    const ventasP2 = compararHoras ? filtrarPorAnioMesSemana(ventas, horas2Anio, horas2Meses, horas2Semanas) : null;
+    const periodo2 = ventasP2 ? calcularVentaPorHora(ventasP2) : null;
 
     const filas = [];
     for (let h = 0; h < 24; h++) {
@@ -190,7 +319,7 @@ export default function PanelComercial() {
       filas.push(fila);
     }
     return filas;
-  }, [ventas, horasDesde1, horasHasta1, compararHoras, horasDesde2, horasHasta2]);
+  }, [ventas, horas1Anio, horas1Meses, horas1Semanas, compararHoras, horas2Anio, horas2Meses, horas2Semanas]);
 
   const mixPago = useMemo(() => {
     const mapa = {};
@@ -243,9 +372,16 @@ export default function PanelComercial() {
           <Tarjeta etiqueta="Cortesías" valor={`${kpis.cortesiaPct.toFixed(1)}%`} detalle={formatoMoneda(kpis.totalCortesias)} color={ROSA} />
         </div>
 
+        <FiltroPeriodo
+          ventasBase={ventas}
+          anio={pmAnio} setAnio={setPmAnio}
+          meses={pmMeses} setMeses={setPmMeses}
+          semanas={pmSemanas} setSemanas={setPmSemanas}
+          titulo="Filtrar Productos más vendidos y Mezcla de venta"
+        />
         <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 20 }}>
           {/* Top productos */}
-          <TarjetaSeccion titulo="Productos más vendidos" subtitulo="Por ingreso generado — top 10">
+          <TarjetaSeccion titulo="Productos más vendidos" subtitulo="Por ingreso generado — top 10 · naranja = alimentos, azul = bebidas">
             <div style={{ width: '100%', height: 320 }}>
               <ResponsiveContainer>
                 <BarChart data={topProductosIngreso} layout="vertical" margin={{ left: 10 }}>
@@ -255,7 +391,7 @@ export default function PanelComercial() {
                   <Tooltip formatter={(v) => formatoMoneda(v)} />
                   <Bar dataKey="ingreso" radius={[0, 4, 4, 0]}>
                     {topProductosIngreso.map((d, i) => (
-                      <Cell key={i} fill={d.categoria === 'bebida' ? TEAL : CORAL} />
+                      <Cell key={i} fill={d.color} />
                     ))}
                   </Bar>
                 </BarChart>
@@ -263,7 +399,7 @@ export default function PanelComercial() {
             </div>
             <div style={{ display: 'flex', gap: 14, marginTop: 10, fontSize: '0.78rem', color: 'var(--texto-sutil)' }}>
               <span><span style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2, background: CORAL, marginRight: 5 }} />Alimentos</span>
-              <span><span style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2, background: TEAL, marginRight: 5 }} />Bebidas</span>
+              <span><span style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2, background: NAVY, marginRight: 5 }} />Bebidas</span>
             </div>
           </TarjetaSeccion>
 
@@ -271,13 +407,13 @@ export default function PanelComercial() {
           <TarjetaSeccion titulo="Mezcla de venta" subtitulo="Alimentos vs. bebidas">
             <div style={{ display: 'flex', height: 28, borderRadius: 8, overflow: 'hidden', marginBottom: 12 }}>
               <div style={{ width: `${mixCategoria.pctAlimento}%`, background: CORAL }} />
-              <div style={{ width: `${mixCategoria.pctBebida}%`, background: TEAL }} />
+              <div style={{ width: `${mixCategoria.pctBebida}%`, background: NAVY }} />
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
               <span><span style={{ color: CORAL, fontWeight: 700 }}>●</span> Alimentos — {mixCategoria.pctAlimento.toFixed(0)}% ({formatoMoneda(mixCategoria.alimento)})</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginTop: 4 }}>
-              <span><span style={{ color: TEAL, fontWeight: 700 }}>●</span> Bebidas — {mixCategoria.pctBebida.toFixed(0)}% ({formatoMoneda(mixCategoria.bebida)})</span>
+              <span><span style={{ color: NAVY, fontWeight: 700 }}>●</span> Bebidas — {mixCategoria.pctBebida.toFixed(0)}% ({formatoMoneda(mixCategoria.bebida)})</span>
             </div>
 
             <h2 style={{ fontFamily: 'var(--fuente-titulo)', fontSize: '1.1rem', color: NAVY, marginTop: 22, marginBottom: 10 }}>
@@ -307,39 +443,31 @@ export default function PanelComercial() {
 
         {/* Horas pico */}
         <TarjetaSeccion titulo="Horas pico" subtitulo="Ventas totales por hora del día — se omiten las horas sin venta en el período">
-          <div className="filtro-fecha" style={{ marginBottom: 4 }}>
-            <div>
-              <label>Desde</label>
-              <input type="date" value={horasDesde1} onChange={(e) => setHorasDesde1(e.target.value)} />
-            </div>
-            <div>
-              <label>Hasta</label>
-              <input type="date" value={horasHasta1} onChange={(e) => setHorasHasta1(e.target.value)} />
-            </div>
-            <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 8 }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.85rem' }}>
-                <input
-                  type="checkbox"
-                  checked={compararHoras}
-                  onChange={(e) => setCompararHoras(e.target.checked)}
-                  style={{ width: 'auto' }}
-                />
-                Comparar con otro período
-              </label>
-            </div>
-          </div>
+          <FiltroPeriodo
+            ventasBase={ventas}
+            anio={horas1Anio} setAnio={setHoras1Anio}
+            meses={horas1Meses} setMeses={setHoras1Meses}
+            semanas={horas1Semanas} setSemanas={setHoras1Semanas}
+            titulo="Período 1"
+          />
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.85rem', marginBottom: 12 }}>
+            <input
+              type="checkbox"
+              checked={compararHoras}
+              onChange={(e) => setCompararHoras(e.target.checked)}
+              style={{ width: 'auto' }}
+            />
+            Comparar con otro período
+          </label>
 
           {compararHoras && (
-            <div className="filtro-fecha" style={{ marginBottom: 12 }}>
-              <div>
-                <label>Desde (período 2)</label>
-                <input type="date" value={horasDesde2} onChange={(e) => setHorasDesde2(e.target.value)} />
-              </div>
-              <div>
-                <label>Hasta (período 2)</label>
-                <input type="date" value={horasHasta2} onChange={(e) => setHorasHasta2(e.target.value)} />
-              </div>
-            </div>
+            <FiltroPeriodo
+              ventasBase={ventas}
+              anio={horas2Anio} setAnio={setHoras2Anio}
+              meses={horas2Meses} setMeses={setHoras2Meses}
+              semanas={horas2Semanas} setSemanas={setHoras2Semanas}
+              titulo="Período 2 (comparativo)"
+            />
           )}
 
           <div style={{ width: '100%', height: 240 }}>
@@ -352,14 +480,14 @@ export default function PanelComercial() {
                 <Legend wrapperStyle={{ fontSize: '0.78rem' }} />
                 <Bar
                   dataKey="periodo1"
-                  name={horasDesde1 || horasHasta1 ? `${horasDesde1 || '…'} a ${horasHasta1 || '…'}` : 'Período 1'}
+                  name="Período 1"
                   fill={NAVY}
                   radius={[4, 4, 0, 0]}
                 />
                 {compararHoras && (
                   <Bar
                     dataKey="periodo2"
-                    name={horasDesde2 || horasHasta2 ? `${horasDesde2 || '…'} a ${horasHasta2 || '…'}` : 'Período 2'}
+                    name="Período 2"
                     fill={CORAL}
                     radius={[4, 4, 0, 0]}
                   />

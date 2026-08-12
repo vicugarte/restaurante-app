@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import {
-  ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ReferenceLine,
+  ScatterChart, Scatter, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell, ReferenceLine,
 } from 'recharts';
 import { supabase } from '../../../lib/supabaseClient';
 import { formatoMoneda } from '../../../lib/format';
@@ -78,7 +78,7 @@ export default function Pareto() {
       return true;
     });
 
-    const totalCuentas = new Set(filtrados.map((p) => p.venta_id)).size;
+    const totalUnidades = filtrados.reduce((s, p) => s + Number(p.cantidad || 0), 0);
 
     const grupos = {};
     for (const p of filtrados) {
@@ -104,7 +104,8 @@ export default function Pareto() {
       categoria: g.categoria,
       unidades: g.unidades,
       venta: g.venta,
-      rotacion: g.ventaIds.size,
+      rotacion: g.unidades, // rotación = total de unidades vendidas (no cuentas)
+      rotacionCuenta: g.ventaIds.size, // se conserva aparte para el comparativo
       precioUnitario: g.unidades > 0 ? g.venta / g.unidades : 0,
     }));
 
@@ -124,7 +125,7 @@ export default function Pareto() {
     let acumuladoRotacion = 0;
     porRotacion.forEach((r, i) => {
       r.rankingRotacion = i + 1;
-      r.pctRotacion = totalCuentas > 0 ? (r.rotacion / totalCuentas) * 100 : 0;
+      r.pctRotacion = totalUnidades > 0 ? (r.rotacion / totalUnidades) * 100 : 0;
       acumuladoRotacion += r.pctRotacion;
       r.paretoRotacion = acumuladoRotacion;
       r.tipoRotacion = tipoDeAcumulado(acumuladoRotacion);
@@ -136,7 +137,7 @@ export default function Pareto() {
 
     lista.sort((a, b) => a.rankingVenta - b.rankingVenta);
 
-    return { detalle: lista, totalVenta, totalCuentas };
+    return { detalle: lista, totalVenta, totalCuentas: totalUnidades };
   }, [productos, ventas, fechaInicio, fechaFin, filtroCategoria, rangoDisponible]);
 
   const matrizVentaConsumo = useMemo(() => {
@@ -204,6 +205,29 @@ export default function Pareto() {
       porTipo[r.tipoRotacion].push({ x: r.rankingRotacion, y: r.paretoRotacion, nombre: r.nombre, tipo: r.tipoRotacion });
     }
     return porTipo;
+  }, [filas]);
+
+  const top10Comparativo = useMemo(() => {
+    return [...filas.detalle]
+      .filter((r) => r.categoria !== 'cortesia')
+      .sort((a, b) => a.rankingVenta - b.rankingVenta)
+      .slice(0, 10)
+      .map((r) => ({
+        nombre: r.nombre.length > 18 ? `${r.nombre.slice(0, 17)}…` : r.nombre,
+        nombreCompleto: r.nombre,
+        unidades: r.unidades,
+        rotacionCuenta: r.rotacionCuenta,
+      }));
+  }, [filas]);
+
+  const listaPorCategoria = useMemo(() => {
+    const alimentos = filas.detalle
+      .filter((r) => r.categoria === 'alimento')
+      .sort((a, b) => a.rankingVenta - b.rankingVenta);
+    const bebidas = filas.detalle
+      .filter((r) => r.categoria === 'bebida')
+      .sort((a, b) => a.rankingVenta - b.rankingVenta);
+    return { alimentos, bebidas };
   }, [filas]);
 
   function alternarTipo(lista, setLista, letra) {
@@ -450,10 +474,82 @@ export default function Pareto() {
             </div>
 
             <h2 style={{ fontFamily: 'var(--fuente-titulo)', fontSize: '1.3rem', color: NAVY, marginBottom: 4 }}>
+              Comparativo Rotación
+            </h2>
+            <p className="subtitulo" style={{ marginBottom: 12 }}>
+              Top 10 productos por venta — rotación por unidades vs. rotación por cuenta (cuántas cuentas distintas pidieron el producto).
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 20, marginBottom: 28, alignItems: 'start' }}>
+              <div style={{ border: '1px solid var(--linea)', borderRadius: 8, padding: '12px 14px', background: '#fff' }}>
+                <div style={{ width: '100%', height: 340 }}>
+                  <ResponsiveContainer>
+                    <BarChart data={top10Comparativo} layout="vertical" margin={{ left: 10 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--linea)" horizontal={false} />
+                      <XAxis type="number" tick={{ fontSize: 10 }} />
+                      <YAxis type="category" dataKey="nombre" width={130} tick={{ fontSize: 10 }} />
+                      <Tooltip
+                        content={({ active, payload }) => {
+                          if (!active || !payload || !payload.length) return null;
+                          const p = payload[0].payload;
+                          return (
+                            <div style={{ background: '#fff', border: '1px solid var(--linea)', borderRadius: 6, padding: '6px 10px', fontSize: '0.78rem' }}>
+                              <div style={{ fontWeight: 700, color: NAVY }}>{p.nombreCompleto}</div>
+                              <div>Rotación por unidades: {p.unidades.toLocaleString('es-MX')}</div>
+                              <div>Rotación por cuenta: {p.rotacionCuenta.toLocaleString('es-MX')}</div>
+                            </div>
+                          );
+                        }}
+                      />
+                      <Legend wrapperStyle={{ fontSize: '0.72rem' }} />
+                      <Bar dataKey="unidades" name="Rotación por unidades" fill={CORAL} radius={[0, 4, 4, 0]} />
+                      <Bar dataKey="rotacionCuenta" name="Rotación por cuenta" fill={TEAL} radius={[0, 4, 4, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                <div style={{ border: '1px solid var(--linea)', borderRadius: 8, padding: '12px 14px', background: '#fff' }}>
+                  <h2 style={{ fontFamily: 'var(--fuente-titulo)', fontSize: '1.05rem', color: CORAL, margin: '0 0 8px' }}>
+                    Alimentos ({listaPorCategoria.alimentos.length})
+                  </h2>
+                  <div style={{ maxHeight: 320, overflowY: 'auto' }}>
+                    {listaPorCategoria.alimentos.map((r) => (
+                      <div key={r.nombre} style={{ borderBottom: '1px solid var(--linea)', padding: '6px 0', fontSize: '0.76rem' }}>
+                        <div style={{ fontWeight: 600, color: NAVY }}>#{r.rankingVenta} — {r.nombre}</div>
+                        <div style={{ color: 'var(--texto-sutil)' }}>
+                          Tipo venta: <span style={claseTipo(r.tipoVenta)}>{r.tipoVenta}</span>
+                          {' · '}Tipo rotación: <span style={claseTipo(r.tipoRotacion)}>{r.tipoRotacion}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{ border: '1px solid var(--linea)', borderRadius: 8, padding: '12px 14px', background: '#fff' }}>
+                  <h2 style={{ fontFamily: 'var(--fuente-titulo)', fontSize: '1.05rem', color: TEAL, margin: '0 0 8px' }}>
+                    Bebidas ({listaPorCategoria.bebidas.length})
+                  </h2>
+                  <div style={{ maxHeight: 320, overflowY: 'auto' }}>
+                    {listaPorCategoria.bebidas.map((r) => (
+                      <div key={r.nombre} style={{ borderBottom: '1px solid var(--linea)', padding: '6px 0', fontSize: '0.76rem' }}>
+                        <div style={{ fontWeight: 600, color: NAVY }}>#{r.rankingVenta} — {r.nombre}</div>
+                        <div style={{ color: 'var(--texto-sutil)' }}>
+                          Tipo venta: <span style={claseTipo(r.tipoVenta)}>{r.tipoVenta}</span>
+                          {' · '}Tipo rotación: <span style={claseTipo(r.tipoRotacion)}>{r.tipoRotacion}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <h2 style={{ fontFamily: 'var(--fuente-titulo)', fontSize: '1.3rem', color: NAVY, marginBottom: 4 }}>
               Detalle por producto
             </h2>
             <p className="subtitulo" style={{ marginBottom: 10 }}>
-              {filasVisibles.length} de {filas.detalle.length} artículo(s) · Venta total {formatoMoneda(filas.totalVenta)} · {filas.totalCuentas} cuentas
+              {filasVisibles.length} de {filas.detalle.length} artículo(s) · Venta total {formatoMoneda(filas.totalVenta)} · {filas.totalCuentas.toLocaleString('es-MX')} unidades totales
             </p>
             <div style={{ overflowX: 'auto' }}>
               <table className="reporte" style={{ fontSize: '0.78rem', minWidth: 1400 }}>
@@ -468,7 +564,7 @@ export default function Pareto() {
                     <th className="monto">Pareto ventas</th>
                     <th>Tipo venta</th>
                     <th className="monto">Ranking venta</th>
-                    <th className="monto">Rotación producto</th>
+                    <th className="monto">Rotación producto (unidades)</th>
                     <th className="monto">% Rotación</th>
                     <th className="monto">Ranking rotación</th>
                     <th>Tipo rotación</th>
