@@ -17,6 +17,20 @@ const TONOS_NARANJA = ['#e8603c', '#ef7d5c', '#f3986f', '#f7b394', '#fbceb9', '#
 const TONOS_AZUL = ['#0b2545', '#173a68', '#24508c', '#3268ab', '#5487c4', '#7ea8d8', '#9fc0e6', '#c2d8f0', '#132f56', '#1e4577'];
 const NOMBRES_MES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
+function colorGradiente(pct) {
+  const p = Math.max(0, Math.min(1, pct));
+  const rojo = [193, 68, 59], amarillo = [201, 138, 31], verde = [27, 122, 94];
+  let c1, c2, t;
+  if (p < 0.5) { c1 = rojo; c2 = amarillo; t = p / 0.5; } else { c1 = amarillo; c2 = verde; t = (p - 0.5) / 0.5; }
+  const r = Math.round(c1[0] + (c2[0] - c1[0]) * t);
+  const g = Math.round(c1[1] + (c2[1] - c1[1]) * t);
+  const b = Math.round(c1[2] + (c2[2] - c1[2]) * t);
+  return `rgba(${r},${g},${b},0.30)`;
+}
+function pctEnRango(valor, [min, max]) {
+  return max > min ? (valor - min) / (max - min) : 0.5;
+}
+
 function claveSemana(fechaStr) {
   const d = new Date(`${fechaStr}T00:00:00`);
   const dia = d.getDay();
@@ -278,19 +292,54 @@ export default function PanelComercial() {
     return { alimento, bebida, total, pctAlimento: total ? (alimento / total) * 100 : 0, pctBebida: total ? (bebida / total) * 100 : 0 };
   }, [productosFiltradosPm]);
 
-  const topMeseros = useMemo(() => {
+  const rendimientoMeseros = useMemo(() => {
+    if (ventas.length === 0) return [];
+    const fechaMax = ventas.reduce((max, v) => (v.fecha && v.fecha > max ? v.fecha : max), '');
+    const corte = new Date(`${fechaMax.slice(0, 10)}T00:00:00`);
+    corte.setDate(corte.getDate() - 28); // últimas 4 semanas = 28 días antes de la fecha más reciente
+    const corteStr = corte.toISOString().slice(0, 10);
+
     const mapa = {};
     for (const v of ventas) {
       const nombre = v.mesero_nombre || 'Sin asignar';
-      if (!mapa[nombre]) mapa[nombre] = { ventas: 0, tickets: 0 };
-      mapa[nombre].ventas += Number(v.total_venta || 0);
-      mapa[nombre].tickets += 1;
+      if (!mapa[nombre]) mapa[nombre] = { ventaTotal: 0, tickets: 0, propinaTotal: 0, venta4s: 0, tickets4s: 0, propina4s: 0 };
+      const m = mapa[nombre];
+      const venta = Number(v.total_venta || 0);
+      const propina = Number(v.propina || 0);
+      m.ventaTotal += venta;
+      m.tickets += 1;
+      m.propinaTotal += propina;
+      const fecha = v.fecha?.slice(0, 10);
+      if (fecha && fecha >= corteStr) {
+        m.venta4s += venta;
+        m.tickets4s += 1;
+        m.propina4s += propina;
+      }
     }
     return Object.entries(mapa)
-      .map(([nombre, d]) => ({ nombre, ...d }))
-      .sort((a, b) => b.ventas - a.ventas)
-      .slice(0, 8);
+      .map(([nombre, m]) => ({
+        nombre,
+        ventaTotal: m.ventaTotal,
+        ventaPromedio: m.tickets > 0 ? m.ventaTotal / m.tickets : 0,
+        ventaPromedio4s: m.tickets4s > 0 ? m.venta4s / m.tickets4s : 0,
+        propinaPct: m.ventaTotal > 0 ? (m.propinaTotal / m.ventaTotal) * 100 : 0,
+        propinaPct4s: m.venta4s > 0 ? (m.propina4s / m.venta4s) * 100 : 0,
+      }))
+      .sort((a, b) => b.ventaTotal - a.ventaTotal);
   }, [ventas]);
+
+  const rangosMesero = useMemo(() => {
+    function rango(campo) {
+      const vals = rendimientoMeseros.map((m) => m[campo]);
+      return [Math.min(...vals, 0), Math.max(...vals, 1)];
+    }
+    return {
+      ventaPromedio: rango('ventaPromedio'),
+      ventaPromedio4s: rango('ventaPromedio4s'),
+      propinaPct: rango('propinaPct'),
+      propinaPct4s: rango('propinaPct4s'),
+    };
+  }, [rendimientoMeseros]);
 
   const porSeccion = useMemo(() => {
     const mapa = {};
@@ -371,7 +420,6 @@ export default function PanelComercial() {
     );
   }
 
-  const maxMesero = topMeseros[0]?.ventas || 1;
   const maxCortesia = topCortesiaMesero[0]?.monto || 1;
 
   return (
@@ -444,14 +492,36 @@ export default function PanelComercial() {
           </TarjetaSeccion>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-          {/* Meseros */}
-          <TarjetaSeccion titulo="Rendimiento por mesero" subtitulo="Top 8 por ventas totales">
-            {topMeseros.map((m) => (
-              <FilaRanking key={m.nombre} nombre={`${m.nombre} · ${m.tickets} tickets`} valor={formatoMoneda(m.ventas)} maxValor={maxMesero} color={CORAL} />
-            ))}
-          </TarjetaSeccion>
+        <TarjetaSeccion titulo="Rendimiento por mesero" subtitulo={`Todos los meseros (${rendimientoMeseros.length}) · ordenado por venta total, de mayor a menor`}>
+          <div style={{ overflowX: 'auto' }}>
+            <table className="reporte" style={{ fontSize: '0.8rem' }}>
+              <thead>
+                <tr>
+                  <th>Mesero</th>
+                  <th className="monto">Venta total</th>
+                  <th className="monto">Venta promedio</th>
+                  <th className="monto">Venta prom. (últimas 4 semanas)</th>
+                  <th className="monto">% propina total</th>
+                  <th className="monto">% propina (últimas 4 semanas)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rendimientoMeseros.map((m) => (
+                  <tr key={m.nombre}>
+                    <td className="nombre">{m.nombre}</td>
+                    <td className="monto">{formatoMoneda(m.ventaTotal)}</td>
+                    <td className="monto" style={{ background: colorGradiente(pctEnRango(m.ventaPromedio, rangosMesero.ventaPromedio)) }}>{formatoMoneda(m.ventaPromedio)}</td>
+                    <td className="monto" style={{ background: colorGradiente(pctEnRango(m.ventaPromedio4s, rangosMesero.ventaPromedio4s)) }}>{formatoMoneda(m.ventaPromedio4s)}</td>
+                    <td className="monto" style={{ background: colorGradiente(pctEnRango(m.propinaPct, rangosMesero.propinaPct)) }}>{m.propinaPct.toFixed(1)}%</td>
+                    <td className="monto" style={{ background: colorGradiente(pctEnRango(m.propinaPct4s, rangosMesero.propinaPct4s)) }}>{m.propinaPct4s.toFixed(1)}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </TarjetaSeccion>
 
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 20 }}>
           {/* Secciones */}
           <TarjetaSeccion titulo="Ventas por sección" subtitulo="Áreas del restaurante">
             {porSeccion.map((s, i) => (

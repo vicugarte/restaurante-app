@@ -57,6 +57,108 @@ function pctEnRango(valor, [min, max]) {
   return max > min ? (valor - min) / (max - min) : 0.5;
 }
 
+// --- Helpers propios para el filtro Año/Mes/Semana de Comparativo Rotación ---
+const NOMBRES_MES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+function claveSemanaFecha(fechaStr) {
+  const d = new Date(`${fechaStr}T00:00:00`);
+  const dia = d.getDay();
+  const diff = (dia === 0 ? -6 : 1) - dia;
+  const lunes = new Date(d);
+  lunes.setDate(d.getDate() + diff);
+  return lunes.toISOString().slice(0, 10);
+}
+function numeroSemanaISO(fecha) {
+  const d = new Date(Date.UTC(fecha.getFullYear(), fecha.getMonth(), fecha.getDate()));
+  const diaSemana = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - diaSemana);
+  const inicioAnio = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const numero = Math.ceil(((d - inicioAnio) / 86400000 + 1) / 7);
+  return { anio: d.getUTCFullYear(), numero };
+}
+function etiquetaSemanaISO(claveLunes) {
+  const lunes = new Date(`${claveLunes}T00:00:00`);
+  const { anio, numero } = numeroSemanaISO(lunes);
+  return `${String(anio).slice(-2)}-S${numero}`;
+}
+function obtenerAniosDe(lista) {
+  return [...new Set(lista.map((v) => v.fecha?.slice(0, 4)).filter(Boolean))].sort();
+}
+function obtenerMesesDe(lista, anios) {
+  const f = anios && anios.length > 0 ? lista.filter((v) => anios.includes(v.fecha?.slice(0, 4))) : lista;
+  return [...new Set(f.map((v) => v.fecha?.slice(5, 7)).filter(Boolean))].sort();
+}
+function obtenerSemanasDe(lista, anios, meses) {
+  let f = lista;
+  if (anios && anios.length > 0) f = f.filter((v) => anios.includes(v.fecha?.slice(0, 4)));
+  if (meses && meses.length > 0) f = f.filter((v) => meses.includes(v.fecha?.slice(5, 7)));
+  return [...new Set(f.map((v) => claveSemanaFecha(v.fecha.slice(0, 10))))].sort();
+}
+
+function FiltroPeriodoComparativo({ ventasBase, anios, setAnios, meses, setMeses, semanas, setSemanas }) {
+  const aniosDisp = useMemo(() => obtenerAniosDe(ventasBase), [ventasBase]);
+  const mesesDisp = useMemo(() => obtenerMesesDe(ventasBase, anios), [ventasBase, anios]);
+  const semanasDisp = useMemo(() => obtenerSemanasDe(ventasBase, anios, meses), [ventasBase, anios, meses]);
+
+  function alternarAnio(a) {
+    setAnios(anios.includes(a) ? anios.filter((x) => x !== a) : [...anios, a]);
+    setMeses([]);
+    setSemanas([]);
+  }
+  function alternarMes(m) {
+    setMeses(meses.includes(m) ? meses.filter((x) => x !== m) : [...meses, m]);
+    setSemanas([]);
+  }
+  function alternarSemana(s) {
+    setSemanas(semanas.includes(s) ? semanas.filter((x) => x !== s) : [...semanas, s]);
+  }
+
+  const chip = (activo) => ({
+    display: 'flex', alignItems: 'center', gap: 3, fontSize: '0.72rem',
+    border: '1px solid var(--linea)', borderRadius: 6, padding: '3px 7px',
+    background: activo ? 'var(--acento-suave)' : '#fff', cursor: 'pointer',
+  });
+
+  return (
+    <div style={{ marginBottom: 14, border: '1px solid var(--linea)', borderRadius: 8, padding: '10px 12px', background: '#faf7f0' }}>
+      <p style={{ fontSize: '0.78rem', fontWeight: 700, color: NAVY, margin: '0 0 8px' }}>
+        Período de Comparativo Rotación {anios.length === 0 && '— Total período'}
+      </p>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+        <div>
+          <label style={{ fontSize: '0.72rem', color: 'var(--texto-sutil)' }}>Año(s)</label>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+            {aniosDisp.map((a) => (
+              <label key={a} style={chip(anios.includes(a))}>
+                <input type="checkbox" checked={anios.includes(a)} onChange={() => alternarAnio(a)} style={{ width: 'auto' }} />{a}
+              </label>
+            ))}
+          </div>
+        </div>
+        <div>
+          <label style={{ fontSize: '0.72rem', color: 'var(--texto-sutil)' }}>Mes(es)</label>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+            {mesesDisp.map((m) => (
+              <label key={m} style={chip(meses.includes(m))}>
+                <input type="checkbox" checked={meses.includes(m)} onChange={() => alternarMes(m)} style={{ width: 'auto' }} />{NOMBRES_MES[parseInt(m, 10) - 1]}
+              </label>
+            ))}
+          </div>
+        </div>
+        <div>
+          <label style={{ fontSize: '0.72rem', color: 'var(--texto-sutil)' }}>Semana(s)</label>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4, maxHeight: 64, overflowY: 'auto' }}>
+            {semanasDisp.map((s) => (
+              <label key={s} style={chip(semanas.includes(s))}>
+                <input type="checkbox" checked={semanas.includes(s)} onChange={() => alternarSemana(s)} style={{ width: 'auto' }} />{etiquetaSemanaISO(s)}
+              </label>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Pareto() {
   const [fechaInicio, setFechaInicio] = useState('');
   const [fechaFin, setFechaFin] = useState('');
@@ -242,28 +344,85 @@ export default function Pareto() {
     return porTipo;
   }, [filas]);
 
+  const [compAnio, setCompAnio] = useState([]);
+  const [compMeses, setCompMeses] = useState([]);
+  const [compSemanas, setCompSemanas] = useState([]);
+  const [seleccionManual, setSeleccionManual] = useState([]); // nombres seleccionados manualmente (máx 10)
+
+  const filasComparativo = useMemo(() => {
+    const fechaPorVenta = {};
+    for (const v of ventas) fechaPorVenta[v.venta_id] = v.fecha?.slice(0, 10);
+
+    const filtrados = productos.filter((p) => {
+      if (p.es_modificador) return false;
+      const fecha = fechaPorVenta[p.venta_id];
+      if (!fecha) return false;
+      if (compAnio.length > 0 && !compAnio.includes(fecha.slice(0, 4))) return false;
+      if (compMeses.length > 0 && !compMeses.includes(fecha.slice(5, 7))) return false;
+      if (compSemanas.length > 0 && !compSemanas.includes(claveSemanaFecha(fecha))) return false;
+      return Number(p.importe_lista || 0) > 0; // igual que "Alimentos + Bebidas" (sin cortesías)
+    });
+
+    const grupos = {};
+    for (const p of filtrados) {
+      const clave = `${p.producto_nombre}__${p.categoria}`;
+      if (!grupos[clave]) grupos[clave] = { nombre: p.producto_nombre, categoria: p.categoria, unidades: 0, venta: 0, ventaIds: new Set() };
+      grupos[clave].unidades += Number(p.cantidad || 0);
+      grupos[clave].venta += Number(p.importe_lista || 0);
+      grupos[clave].ventaIds.add(p.venta_id);
+    }
+    let lista = Object.values(grupos).map((g) => ({
+      nombre: g.nombre, categoria: g.categoria, unidades: g.unidades, venta: g.venta, rotacionCuenta: g.ventaIds.size,
+    }));
+
+    const totalVenta = lista.reduce((s, r) => s + r.venta, 0);
+    lista.sort((a, b) => b.venta - a.venta);
+    let acumVenta = 0;
+    lista.forEach((r, i) => {
+      r.rankingVenta = i + 1;
+      acumVenta += totalVenta > 0 ? (r.venta / totalVenta) * 100 : 0;
+      r.tipoVenta = tipoDeAcumulado(acumVenta);
+    });
+
+    const totalUnidades = lista.reduce((s, r) => s + r.unidades, 0);
+    const porUnidades = [...lista].sort((a, b) => b.unidades - a.unidades);
+    let acumUnidades = 0;
+    porUnidades.forEach((r, i) => {
+      r.rankingRotacion = i + 1;
+      acumUnidades += totalUnidades > 0 ? (r.unidades / totalUnidades) * 100 : 0;
+      r.tipoRotacion = tipoDeAcumulado(acumUnidades);
+    });
+
+    lista.sort((a, b) => a.rankingVenta - b.rankingVenta);
+    return lista;
+  }, [productos, ventas, compAnio, compMeses, compSemanas]);
+
+  const listaPorCategoriaComparativo = useMemo(() => ({
+    alimentos: filasComparativo.filter((r) => r.categoria === 'alimento'),
+    bebidas: filasComparativo.filter((r) => r.categoria === 'bebida'),
+  }), [filasComparativo]);
+
+  function alternarSeleccionComparativo(nombre) {
+    setSeleccionManual((prev) => {
+      if (prev.includes(nombre)) return prev.filter((n) => n !== nombre);
+      if (prev.length >= 10) return prev; // no exceder 10
+      return [...prev, nombre];
+    });
+  }
+
   const top10Comparativo = useMemo(() => {
-    return [...filas.detalle]
-      .filter((r) => r.categoria !== 'cortesia')
+    const fuente = seleccionManual.length > 0
+      ? filasComparativo.filter((r) => seleccionManual.includes(r.nombre))
+      : [...filasComparativo].slice(0, 10);
+    return [...fuente]
       .sort((a, b) => a.rankingVenta - b.rankingVenta)
-      .slice(0, 10)
       .map((r) => ({
-        nombre: r.nombre.length > 18 ? `${r.nombre.slice(0, 17)}…` : r.nombre,
+        nombre: r.nombre.length > 14 ? `${r.nombre.slice(0, 13)}…` : r.nombre,
         nombreCompleto: r.nombre,
         unidades: r.unidades,
         rotacionCuenta: r.rotacionCuenta,
       }));
-  }, [filas]);
-
-  const listaPorCategoria = useMemo(() => {
-    const alimentos = filas.detalle
-      .filter((r) => r.categoria === 'alimento')
-      .sort((a, b) => a.rankingVenta - b.rankingVenta);
-    const bebidas = filas.detalle
-      .filter((r) => r.categoria === 'bebida')
-      .sort((a, b) => a.rankingVenta - b.rankingVenta);
-    return { alimentos, bebidas };
-  }, [filas]);
+  }, [filasComparativo, seleccionManual]);
 
   const rangosCalor = useMemo(() => calcularRangos(filas.detalle), [filas]);
 
@@ -514,16 +673,25 @@ export default function Pareto() {
               Comparativo Rotación
             </h2>
             <p className="subtitulo" style={{ marginBottom: 12 }}>
-              Top 10 productos por venta — rotación por unidades vs. rotación por cuenta (cuántas cuentas distintas pidieron el producto).
+              Por default los top 10 productos por venta — rotación por unidades (eje izquierdo) vs. rotación por cuenta (eje derecho). Selecciona productos de las listas para analizar otros en particular.
             </p>
+
+            <FiltroPeriodoComparativo
+              ventasBase={ventas}
+              anios={compAnio} setAnios={setCompAnio}
+              meses={compMeses} setMeses={setCompMeses}
+              semanas={compSemanas} setSemanas={setCompSemanas}
+            />
+
             <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 20, marginBottom: 28, alignItems: 'start' }}>
               <div style={{ border: '1px solid var(--linea)', borderRadius: 8, padding: '12px 14px', background: '#fff' }}>
-                <div style={{ width: '100%', height: 340 }}>
+                <div style={{ width: '100%', height: 380 }}>
                   <ResponsiveContainer>
-                    <BarChart data={top10Comparativo} layout="vertical" margin={{ left: 10 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="var(--linea)" horizontal={false} />
-                      <XAxis type="number" tick={{ fontSize: 10 }} />
-                      <YAxis type="category" dataKey="nombre" width={130} tick={{ fontSize: 10 }} />
+                    <BarChart data={top10Comparativo} margin={{ bottom: 70 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--linea)" />
+                      <XAxis dataKey="nombre" tick={{ fontSize: 10 }} angle={-45} textAnchor="end" interval={0} height={80} />
+                      <YAxis yAxisId="unidades" tick={{ fontSize: 10 }} label={{ value: 'Rotación por unidades', angle: -90, position: 'insideLeft', fontSize: 10 }} />
+                      <YAxis yAxisId="cuenta" orientation="right" tick={{ fontSize: 10 }} label={{ value: 'Rotación por cuenta', angle: 90, position: 'insideRight', fontSize: 10 }} />
                       <Tooltip
                         content={({ active, payload }) => {
                           if (!active || !payload || !payload.length) return null;
@@ -538,8 +706,8 @@ export default function Pareto() {
                         }}
                       />
                       <Legend wrapperStyle={{ fontSize: '0.72rem' }} />
-                      <Bar dataKey="unidades" name="Rotación por unidades" fill={CORAL} radius={[0, 4, 4, 0]} />
-                      <Bar dataKey="rotacionCuenta" name="Rotación por cuenta" fill={TEAL} radius={[0, 4, 4, 0]} />
+                      <Bar yAxisId="unidades" dataKey="unidades" name="Rotación por unidades" fill={CORAL} radius={[4, 4, 0, 0]} />
+                      <Bar yAxisId="cuenta" dataKey="rotacionCuenta" name="Rotación por cuenta" fill={TEAL} radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -547,36 +715,84 @@ export default function Pareto() {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                 <div style={{ border: '1px solid var(--linea)', borderRadius: 8, padding: '12px 14px', background: '#fff' }}>
-                  <h2 style={{ fontFamily: 'var(--fuente-titulo)', fontSize: '1.05rem', color: CORAL, margin: '0 0 8px' }}>
-                    Alimentos ({listaPorCategoria.alimentos.length})
-                  </h2>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                    <h2 style={{ fontFamily: 'var(--fuente-titulo)', fontSize: '1.05rem', color: CORAL, margin: 0 }}>
+                      Alimentos ({listaPorCategoriaComparativo.alimentos.length})
+                    </h2>
+                    <button
+                      type="button"
+                      onClick={() => setSeleccionManual((prev) => prev.filter((n) => !listaPorCategoriaComparativo.alimentos.some((r) => r.nombre === n)))}
+                      style={{ fontSize: '0.68rem', padding: '3px 7px', width: 'auto', background: '#fff', border: '1px solid var(--linea)', borderRadius: 6, cursor: 'pointer' }}
+                    >
+                      Quitar selección
+                    </button>
+                  </div>
+                  <p style={{ fontSize: '0.68rem', color: 'var(--texto-sutil)', margin: '0 0 8px' }}>
+                    Máximo 10 productos seleccionados en total ({seleccionManual.length}/10) — sin selección se muestra el top 10 por default.
+                  </p>
                   <div style={{ maxHeight: 320, overflowY: 'auto' }}>
-                    {listaPorCategoria.alimentos.map((r) => (
-                      <div key={r.nombre} style={{ borderBottom: '1px solid var(--linea)', padding: '6px 0', fontSize: '0.76rem' }}>
-                        <div style={{ fontWeight: 600, color: NAVY }}>#{r.rankingVenta} — {r.nombre}</div>
-                        <div style={{ color: 'var(--texto-sutil)' }}>
-                          Tipo venta: <span style={claseTipo(r.tipoVenta)}>{r.tipoVenta}</span>
-                          {' · '}Tipo rotación: <span style={claseTipo(r.tipoRotacion)}>{r.tipoRotacion}</span>
+                    {listaPorCategoriaComparativo.alimentos.map((r) => {
+                      const seleccionado = seleccionManual.includes(r.nombre);
+                      return (
+                        <div
+                          key={r.nombre}
+                          onClick={() => alternarSeleccionComparativo(r.nombre)}
+                          style={{
+                            borderBottom: '1px solid var(--linea)', padding: '6px 6px', fontSize: '0.76rem', cursor: 'pointer',
+                            background: seleccionado ? 'var(--acento-suave)' : 'transparent', borderRadius: 4,
+                          }}
+                        >
+                          <div style={{ fontWeight: 600, color: NAVY }}>
+                            {seleccionado ? '● ' : ''}#{r.rankingVenta} — {r.nombre}
+                          </div>
+                          <div style={{ color: 'var(--texto-sutil)' }}>
+                            Tipo venta: <span style={claseTipo(r.tipoVenta)}>{r.tipoVenta}</span>
+                            {' · '}Tipo rotación: <span style={claseTipo(r.tipoRotacion)}>{r.tipoRotacion}</span>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
 
                 <div style={{ border: '1px solid var(--linea)', borderRadius: 8, padding: '12px 14px', background: '#fff' }}>
-                  <h2 style={{ fontFamily: 'var(--fuente-titulo)', fontSize: '1.05rem', color: TEAL, margin: '0 0 8px' }}>
-                    Bebidas ({listaPorCategoria.bebidas.length})
-                  </h2>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                    <h2 style={{ fontFamily: 'var(--fuente-titulo)', fontSize: '1.05rem', color: TEAL, margin: 0 }}>
+                      Bebidas ({listaPorCategoriaComparativo.bebidas.length})
+                    </h2>
+                    <button
+                      type="button"
+                      onClick={() => setSeleccionManual((prev) => prev.filter((n) => !listaPorCategoriaComparativo.bebidas.some((r) => r.nombre === n)))}
+                      style={{ fontSize: '0.68rem', padding: '3px 7px', width: 'auto', background: '#fff', border: '1px solid var(--linea)', borderRadius: 6, cursor: 'pointer' }}
+                    >
+                      Quitar selección
+                    </button>
+                  </div>
+                  <p style={{ fontSize: '0.68rem', color: 'var(--texto-sutil)', margin: '0 0 8px' }}>
+                    Máximo 10 productos seleccionados en total ({seleccionManual.length}/10) — sin selección se muestra el top 10 por default.
+                  </p>
                   <div style={{ maxHeight: 320, overflowY: 'auto' }}>
-                    {listaPorCategoria.bebidas.map((r) => (
-                      <div key={r.nombre} style={{ borderBottom: '1px solid var(--linea)', padding: '6px 0', fontSize: '0.76rem' }}>
-                        <div style={{ fontWeight: 600, color: NAVY }}>#{r.rankingVenta} — {r.nombre}</div>
-                        <div style={{ color: 'var(--texto-sutil)' }}>
-                          Tipo venta: <span style={claseTipo(r.tipoVenta)}>{r.tipoVenta}</span>
-                          {' · '}Tipo rotación: <span style={claseTipo(r.tipoRotacion)}>{r.tipoRotacion}</span>
+                    {listaPorCategoriaComparativo.bebidas.map((r) => {
+                      const seleccionado = seleccionManual.includes(r.nombre);
+                      return (
+                        <div
+                          key={r.nombre}
+                          onClick={() => alternarSeleccionComparativo(r.nombre)}
+                          style={{
+                            borderBottom: '1px solid var(--linea)', padding: '6px 6px', fontSize: '0.76rem', cursor: 'pointer',
+                            background: seleccionado ? 'var(--acento-suave)' : 'transparent', borderRadius: 4,
+                          }}
+                        >
+                          <div style={{ fontWeight: 600, color: NAVY }}>
+                            {seleccionado ? '● ' : ''}#{r.rankingVenta} — {r.nombre}
+                          </div>
+                          <div style={{ color: 'var(--texto-sutil)' }}>
+                            Tipo venta: <span style={claseTipo(r.tipoVenta)}>{r.tipoVenta}</span>
+                            {' · '}Tipo rotación: <span style={claseTipo(r.tipoRotacion)}>{r.tipoRotacion}</span>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               </div>
