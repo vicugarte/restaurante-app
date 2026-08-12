@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell,
 } from 'recharts';
 import { supabase } from '../../../lib/supabaseClient';
 import { formatoMoneda } from '../../../lib/format';
@@ -106,10 +106,11 @@ export default function PanelComercial() {
     for (const p of productos) {
       if (p.es_modificador) continue;
       const nombre = p.producto_nombre;
-      mapa[nombre] = (mapa[nombre] || 0) + Number(p.importe_lista || 0);
+      if (!mapa[nombre]) mapa[nombre] = { ingreso: 0, categoria: p.categoria };
+      mapa[nombre].ingreso += Number(p.importe_lista || 0);
     }
     return Object.entries(mapa)
-      .map(([nombre, ingreso]) => ({ nombre, ingreso }))
+      .map(([nombre, d]) => ({ nombre, ingreso: d.ingreso, categoria: d.categoria }))
       .sort((a, b) => b.ingreso - a.ingreso)
       .slice(0, 10);
   }, [productos]);
@@ -148,16 +149,48 @@ export default function PanelComercial() {
     return Object.entries(mapa).map(([nombre, ventas]) => ({ nombre, ventas })).sort((a, b) => b.ventas - a.ventas);
   }, [ventas]);
 
-  const porHora = useMemo(() => {
+  function calcularVentaPorHora(listaVentas) {
     const mapa = {};
     for (let h = 0; h < 24; h++) mapa[h] = 0;
-    for (const v of ventas) {
+    for (const v of listaVentas) {
       if (!v.fecha) continue;
       const h = new Date(v.fecha).getHours();
       mapa[h] += Number(v.total_venta || 0);
     }
-    return Object.entries(mapa).map(([hora, ventas]) => ({ hora: `${hora}:00`, ventas }));
-  }, [ventas]);
+    return mapa;
+  }
+
+  function filtrarVentasPorRango(listaVentas, desde, hasta) {
+    return listaVentas.filter((v) => {
+      if (!v.fecha) return false;
+      const f = v.fecha.slice(0, 10);
+      if (desde && f < desde) return false;
+      if (hasta && f > hasta) return false;
+      return true;
+    });
+  }
+
+  const [horasDesde1, setHorasDesde1] = useState('');
+  const [horasHasta1, setHorasHasta1] = useState('');
+  const [compararHoras, setCompararHoras] = useState(false);
+  const [horasDesde2, setHorasDesde2] = useState('');
+  const [horasHasta2, setHorasHasta2] = useState('');
+
+  const porHora = useMemo(() => {
+    const periodo1 = calcularVentaPorHora(filtrarVentasPorRango(ventas, horasDesde1, horasHasta1));
+    const periodo2 = compararHoras ? calcularVentaPorHora(filtrarVentasPorRango(ventas, horasDesde2, horasHasta2)) : null;
+
+    const filas = [];
+    for (let h = 0; h < 24; h++) {
+      const v1 = periodo1[h] || 0;
+      const v2 = periodo2 ? periodo2[h] || 0 : 0;
+      if (v1 === 0 && (!periodo2 || v2 === 0)) continue; // omite horas sin venta en ningún período
+      const fila = { hora: `${h}:00`, periodo1: v1 };
+      if (periodo2) fila.periodo2 = v2;
+      filas.push(fila);
+    }
+    return filas;
+  }, [ventas, horasDesde1, horasHasta1, compararHoras, horasDesde2, horasHasta2]);
 
   const mixPago = useMemo(() => {
     const mapa = {};
@@ -221,12 +254,16 @@ export default function PanelComercial() {
                   <YAxis type="category" dataKey="nombre" width={150} tick={{ fontSize: 11 }} />
                   <Tooltip formatter={(v) => formatoMoneda(v)} />
                   <Bar dataKey="ingreso" radius={[0, 4, 4, 0]}>
-                    {topProductosIngreso.map((_, i) => (
-                      <Cell key={i} fill={PALETA[i % PALETA.length]} />
+                    {topProductosIngreso.map((d, i) => (
+                      <Cell key={i} fill={d.categoria === 'bebida' ? TEAL : CORAL} />
                     ))}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
+            </div>
+            <div style={{ display: 'flex', gap: 14, marginTop: 10, fontSize: '0.78rem', color: 'var(--texto-sutil)' }}>
+              <span><span style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2, background: CORAL, marginRight: 5 }} />Alimentos</span>
+              <span><span style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2, background: TEAL, marginRight: 5 }} />Bebidas</span>
             </div>
           </TarjetaSeccion>
 
@@ -269,15 +306,64 @@ export default function PanelComercial() {
         </div>
 
         {/* Horas pico */}
-        <TarjetaSeccion titulo="Horas pico" subtitulo="Ventas totales por hora del día">
+        <TarjetaSeccion titulo="Horas pico" subtitulo="Ventas totales por hora del día — se omiten las horas sin venta en el período">
+          <div className="filtro-fecha" style={{ marginBottom: 4 }}>
+            <div>
+              <label>Desde</label>
+              <input type="date" value={horasDesde1} onChange={(e) => setHorasDesde1(e.target.value)} />
+            </div>
+            <div>
+              <label>Hasta</label>
+              <input type="date" value={horasHasta1} onChange={(e) => setHorasHasta1(e.target.value)} />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 8 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.85rem' }}>
+                <input
+                  type="checkbox"
+                  checked={compararHoras}
+                  onChange={(e) => setCompararHoras(e.target.checked)}
+                  style={{ width: 'auto' }}
+                />
+                Comparar con otro período
+              </label>
+            </div>
+          </div>
+
+          {compararHoras && (
+            <div className="filtro-fecha" style={{ marginBottom: 12 }}>
+              <div>
+                <label>Desde (período 2)</label>
+                <input type="date" value={horasDesde2} onChange={(e) => setHorasDesde2(e.target.value)} />
+              </div>
+              <div>
+                <label>Hasta (período 2)</label>
+                <input type="date" value={horasHasta2} onChange={(e) => setHorasHasta2(e.target.value)} />
+              </div>
+            </div>
+          )}
+
           <div style={{ width: '100%', height: 240 }}>
             <ResponsiveContainer>
               <BarChart data={porHora}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--linea)" />
-                <XAxis dataKey="hora" tick={{ fontSize: 10 }} interval={1} />
+                <XAxis dataKey="hora" tick={{ fontSize: 10 }} interval={0} />
                 <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => formatoMoneda(v)} width={80} />
                 <Tooltip formatter={(v) => formatoMoneda(v)} />
-                <Bar dataKey="ventas" fill={NAVY} radius={[4, 4, 0, 0]} />
+                <Legend wrapperStyle={{ fontSize: '0.78rem' }} />
+                <Bar
+                  dataKey="periodo1"
+                  name={horasDesde1 || horasHasta1 ? `${horasDesde1 || '…'} a ${horasHasta1 || '…'}` : 'Período 1'}
+                  fill={NAVY}
+                  radius={[4, 4, 0, 0]}
+                />
+                {compararHoras && (
+                  <Bar
+                    dataKey="periodo2"
+                    name={horasDesde2 || horasHasta2 ? `${horasDesde2 || '…'} a ${horasHasta2 || '…'}` : 'Período 2'}
+                    fill={CORAL}
+                    radius={[4, 4, 0, 0]}
+                  />
+                )}
               </BarChart>
             </ResponsiveContainer>
           </div>
